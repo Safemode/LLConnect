@@ -24,6 +24,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import com.safemode.llconnect.data.remote.models.GasRecord
 import com.safemode.llconnect.data.remote.models.GenericRecord
 import com.safemode.llconnect.data.remote.models.OdometerRecord
+import com.safemode.llconnect.data.settings.FuelEconomyUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -181,27 +182,41 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     private suspend fun vehicleNames(api: LubeLoggerApi): Map<Long?, String> =
         api.getVehicles().unwrap().associate { it.id to it.displayName }
 
-    /** Recent activity across every vehicle, newest first. */
-    suspend fun getActivity(): Result<List<ActivityItem>> = runCatching {
+    /** Resolves the current fuel-economy setting into (useMPG, useUKMPG) query values. */
+    private fun mpgParams(): Pair<String?, String?> = when (apiProvider.currentConfig().fuelEconomyUnit) {
+        FuelEconomyUnit.US_MPG -> "true" to null
+        FuelEconomyUnit.UK_MPG -> null to "true"
+        FuelEconomyUnit.DEFAULT -> null to null
+    }
+
+    /** Recent activity across every vehicle, newest first, optionally within a date range. */
+    suspend fun getActivity(
+        startDate: String? = null,
+        endDate: String? = null,
+    ): Result<List<ActivityItem>> = runCatching {
         coroutineScope {
             val api = api()
             val names = vehicleNames(api)
             fun name(id: Long?) = names[id] ?: "Vehicle #${id ?: "?"}"
+            val (useMpg, useUkMpg) = mpgParams()
 
-            val service = async { api.getAllServiceRecords().unwrap().map { it.toActivity(RecordArea.SERVICE, ::name) } }
-            val repair = async { api.getAllRepairRecords().unwrap().map { it.toActivity(RecordArea.REPAIR, ::name) } }
-            val upgrade = async { api.getAllUpgradeRecords().unwrap().map { it.toActivity(RecordArea.UPGRADE, ::name) } }
-            val tax = async { api.getAllTaxRecords().unwrap().map { it.toActivity(RecordArea.TAX, ::name) } }
-            val gas = async { api.getAllGasRecords().unwrap().map { it.toActivity(::name) } }
-            val odo = async { api.getAllOdometerRecords().unwrap().map { it.toActivity(::name) } }
+            val service = async { api.getAllServiceRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.SERVICE, ::name) } }
+            val repair = async { api.getAllRepairRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.REPAIR, ::name) } }
+            val upgrade = async { api.getAllUpgradeRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.UPGRADE, ::name) } }
+            val tax = async { api.getAllTaxRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.TAX, ::name) } }
+            val gas = async { api.getAllGasRecords(startDate, endDate, useMpg, useUkMpg).unwrap().map { it.toActivity(::name) } }
+            val odo = async { api.getAllOdometerRecords(startDate, endDate).unwrap().map { it.toActivity(::name) } }
 
             (service.await() + repair.await() + upgrade.await() + tax.await() + gas.await() + odo.await())
                 .sortedByDescending { parseDate(it.date)?.toEpochDay() ?: Long.MIN_VALUE }
         }
     }
 
-    /** Aggregated spend derived from the activity feed. */
-    suspend fun getCostReport(): Result<CostReport> = getActivity().map { items ->
+    /** Aggregated spend derived from the activity feed, optionally within a date range. */
+    suspend fun getCostReport(
+        startDate: String? = null,
+        endDate: String? = null,
+    ): Result<CostReport> = getActivity(startDate, endDate).map { items ->
         val withCost = items.filter { (it.cost ?: 0.0) != 0.0 }
         val byCategory = withCost.groupBy { it.area }
             .map { (area, rows) -> CategoryTotal(area, rows.sumOf { it.cost ?: 0.0 }, rows.size) }
@@ -250,7 +265,10 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
                 RecordArea.REPAIR -> api.getRepairRecords(vehicleId).unwrap().map { it.toRow() }
                 RecordArea.UPGRADE -> api.getUpgradeRecords(vehicleId).unwrap().map { it.toRow() }
                 RecordArea.TAX -> api.getTaxRecords(vehicleId).unwrap().map { it.toRow(isTax = true) }
-                RecordArea.GAS -> api.getGasRecords(vehicleId).unwrap().map { it.toRow() }
+                RecordArea.GAS -> {
+                    val (useMpg, useUkMpg) = mpgParams()
+                    api.getGasRecords(vehicleId, useMpg, useUkMpg).unwrap().map { it.toRow() }
+                }
                 RecordArea.ODOMETER -> api.getOdometerRecords(vehicleId).unwrap().map { it.toRow() }
                 RecordArea.PLAN -> api.getPlanRecords(vehicleId).unwrap().map { it.toRow() }
                 RecordArea.SUPPLY -> api.getSupplyRecords(vehicleId).unwrap().map { it.toRow() }

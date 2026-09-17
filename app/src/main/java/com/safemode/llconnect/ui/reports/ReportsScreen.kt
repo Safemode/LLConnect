@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.safemode.llconnect.data.CostReport
+import com.safemode.llconnect.ui.common.DateRangeChips
 import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
 import com.safemode.llconnect.ui.common.UiState
@@ -46,6 +47,7 @@ fun ReportsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val range by viewModel.range.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -59,16 +61,18 @@ fun ReportsScreen(
             )
         },
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = viewModel::refresh,
-            modifier = Modifier.padding(padding),
-        ) {
-            when (val s = state) {
-                UiState.Loading -> LoadingState()
-                UiState.NotConfigured -> ErrorState(message = "Add your server details in Settings first.")
-                is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
-                is UiState.Success -> ReportContent(s.data)
+        Column(modifier = Modifier.padding(padding)) {
+            DateRangeChips(selected = range, onSelect = viewModel::setRange)
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = viewModel::refresh,
+            ) {
+                when (val s = state) {
+                    UiState.Loading -> LoadingState()
+                    UiState.NotConfigured -> ErrorState(message = "Add your server details in Settings first.")
+                    is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
+                    is UiState.Success -> ReportContent(s.data)
+                }
             }
         }
     }

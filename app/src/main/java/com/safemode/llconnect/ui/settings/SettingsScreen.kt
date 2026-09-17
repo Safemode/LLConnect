@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.safemode.llconnect.data.settings.AuthMode
+import com.safemode.llconnect.data.settings.FuelEconomyUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -217,6 +218,31 @@ fun SettingsScreen(
                             checked = config.cultureInvariant,
                             onCheckedChange = { v -> viewModel.update { it.copy(cultureInvariant = v) } },
                         )
+                    }
+                }
+            }
+
+            // ---- Fuel economy card ----
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Fuel economy units", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "How fuel economy is calculated for gas records. Default uses your " +
+                            "server's setting.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FuelEconomyUnit.entries.forEach { unit ->
+                            FilterChip(
+                                selected = config.fuelEconomyUnit == unit,
+                                onClick = { viewModel.update { it.copy(fuelEconomyUnit = unit) } },
+                                label = { Text(unit.label) },
+                            )
+                        }
                     }
                 }
             }
