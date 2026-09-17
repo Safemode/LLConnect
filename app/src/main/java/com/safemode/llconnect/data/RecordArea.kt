@@ -13,12 +13,19 @@ enum class RecordArea(
     GAS("Fuel", true, true),
     ODOMETER("Odometer", true, true),
     TAX("Taxes", true, true),
-    PLAN("Planner", false, true),
-    SUPPLY("Supplies", false, true),
-    REMINDER("Reminders", false, false),
-    EQUIPMENT("Equipment", false, true),
-    NOTE("Notes", false, true),
+    PLAN("Planner", true, true),
+    SUPPLY("Supplies", true, true),
+    REMINDER("Reminders", true, false),
+    EQUIPMENT("Equipment", true, true),
+    NOTE("Notes", true, true),
 }
+
+/** Lightweight per-area summary shown on the vehicle dashboard tiles. */
+data class AreaSummary(
+    val count: Int,
+    /** Most recent activity date (or, for reminders, the soonest due date); null if none/undated. */
+    val lastDate: String?,
+)
 
 /** A flattened, display-ready view of any record type. */
 data class RecordRow(

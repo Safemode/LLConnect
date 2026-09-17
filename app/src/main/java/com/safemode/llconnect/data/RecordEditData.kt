@@ -15,4 +15,21 @@ data class RecordEditData(
     val missedFuelUp: Boolean? = null,
     val notes: String? = null,
     val tags: String? = null,
+    // Planner
+    val type: String? = null,
+    val priority: String? = null,
+    val progress: String? = null,
+    // Supplies
+    val partNumber: String? = null,
+    val partSupplier: String? = null,
+    val partQuantity: Long? = null,
+    // Reminders
+    val dueDate: String? = null,
+    val dueOdometer: Long? = null,
+    val metric: String? = null,
+    // Equipment
+    val isEquipped: Boolean? = null,
+    // Notes
+    val noteText: String? = null,
+    val pinned: Boolean? = null,
 )

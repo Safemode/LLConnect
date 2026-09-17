@@ -4,9 +4,14 @@ import com.safemode.llconnect.data.remote.ApiProvider
 import com.safemode.llconnect.data.remote.LubeLoggerApi
 import com.safemode.llconnect.data.remote.models.FileAttachment
 import com.safemode.llconnect.data.remote.models.FileAttachmentResponse
+import com.safemode.llconnect.data.remote.models.EquipmentRecordRequest
 import com.safemode.llconnect.data.remote.models.GasRecordRequest
 import com.safemode.llconnect.data.remote.models.GenericRecordRequest
+import com.safemode.llconnect.data.remote.models.NoteRequest
 import com.safemode.llconnect.data.remote.models.OdometerRecordRequest
+import com.safemode.llconnect.data.remote.models.PlanRecordRequest
+import com.safemode.llconnect.data.remote.models.ReminderRecordRequest
+import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
 import com.safemode.llconnect.data.remote.models.TaxRecordRequest
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.data.remote.models.VehicleAddRequest
@@ -21,6 +26,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import retrofit2.Response
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 /**
  * Single entry point the UI uses to talk to LubeLogger. Wraps API calls in
@@ -112,6 +119,47 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
             }
         }
 
+    /** Count + most-recent (or soonest-due, for reminders) date for a single area. */
+    suspend fun getAreaSummary(area: RecordArea, vehicleId: String): Result<AreaSummary> =
+        runCatching {
+            val api = api()
+            fun <T> List<T>.summarize(earliest: Boolean = false, date: (T) -> String?) =
+                AreaSummary(size, reduceDate(mapNotNull(date), earliest))
+            when (area) {
+                RecordArea.SERVICE -> api.getServiceRecords(vehicleId).unwrap().summarize { it.date }
+                RecordArea.REPAIR -> api.getRepairRecords(vehicleId).unwrap().summarize { it.date }
+                RecordArea.UPGRADE -> api.getUpgradeRecords(vehicleId).unwrap().summarize { it.date }
+                RecordArea.TAX -> api.getTaxRecords(vehicleId).unwrap().summarize { it.date }
+                RecordArea.GAS -> api.getGasRecords(vehicleId).unwrap().summarize { it.date }
+                RecordArea.ODOMETER -> api.getOdometerRecords(vehicleId).unwrap().summarize { it.date }
+                RecordArea.PLAN -> api.getPlanRecords(vehicleId).unwrap()
+                    .summarize { it.dateModified ?: it.dateCreated }
+                RecordArea.SUPPLY -> api.getSupplyRecords(vehicleId).unwrap().summarize { it.date }
+                RecordArea.REMINDER -> api.getReminders(vehicleId).unwrap()
+                    .summarize(earliest = true) { it.dueDate }
+                RecordArea.EQUIPMENT -> api.getEquipmentRecords(vehicleId).unwrap().summarize { null }
+                RecordArea.NOTE -> api.getNotes(vehicleId).unwrap().summarize { null }
+            }
+        }
+
+    /** Reduces a set of date strings to the latest (or earliest) as an ISO date. */
+    private fun reduceDate(dates: List<String>, earliest: Boolean): String? {
+        val clean = dates
+            .map { it.substringBefore('T').substringBefore(' ').trim() }
+            .filter { it.isNotEmpty() }
+        if (clean.isEmpty()) return null
+        var best: LocalDate? = null
+        for (d in clean) {
+            val parsed = DateFormats.firstNotNullOfOrNull { fmt ->
+                runCatching { LocalDate.parse(d, fmt) }.getOrNull()
+            } ?: continue
+            if (best == null || (if (earliest) parsed.isBefore(best) else parsed.isAfter(best))) {
+                best = parsed
+            }
+        }
+        return best?.toString() ?: clean.first()
+    }
+
     // ---- Records: delete ----
     suspend fun deleteRecord(area: RecordArea, id: String): Result<Unit> = callUnit { api ->
         when (area) {
@@ -169,6 +217,37 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     suspend fun updateOdometer(body: OdometerRecordRequest): Result<Unit> =
         callUnit { it.updateOdometerRecord(body) }
 
+    // ---- Records: add/update (planner, supplies, reminders, equipment, notes) ----
+    suspend fun addPlan(vehicleId: String, body: PlanRecordRequest): Result<Unit> =
+        callUnit { it.addPlanRecord(vehicleId, body) }
+
+    suspend fun updatePlan(body: PlanRecordRequest): Result<Unit> =
+        callUnit { it.updatePlanRecord(body) }
+
+    suspend fun addSupply(vehicleId: String, body: SupplyRecordRequest): Result<Unit> =
+        callUnit { it.addSupplyRecord(vehicleId, body) }
+
+    suspend fun updateSupply(body: SupplyRecordRequest): Result<Unit> =
+        callUnit { it.updateSupplyRecord(body) }
+
+    suspend fun addReminder(vehicleId: String, body: ReminderRecordRequest): Result<Unit> =
+        callUnit { it.addReminder(vehicleId, body) }
+
+    suspend fun updateReminder(body: ReminderRecordRequest): Result<Unit> =
+        callUnit { it.updateReminder(body) }
+
+    suspend fun addEquipment(vehicleId: String, body: EquipmentRecordRequest): Result<Unit> =
+        callUnit { it.addEquipmentRecord(vehicleId, body) }
+
+    suspend fun updateEquipment(body: EquipmentRecordRequest): Result<Unit> =
+        callUnit { it.updateEquipmentRecord(body) }
+
+    suspend fun addNote(vehicleId: String, body: NoteRequest): Result<Unit> =
+        callUnit { it.addNote(vehicleId, body) }
+
+    suspend fun updateNote(body: NoteRequest): Result<Unit> =
+        callUnit { it.updateNote(body) }
+
     // ---- Records: fetch a single record for editing ----
     suspend fun getRecordForEdit(
         area: RecordArea,
@@ -190,7 +269,16 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
                 api.getGasRecords(vehicleId).unwrap().firstOrNull { match(it.id) }?.toEdit()
             RecordArea.ODOMETER ->
                 api.getOdometerRecords(vehicleId).unwrap().firstOrNull { match(it.id) }?.toEdit()
-            else -> null
+            RecordArea.PLAN ->
+                api.getPlanRecords(vehicleId).unwrap().firstOrNull { match(it.id) }?.toEdit()
+            RecordArea.SUPPLY ->
+                api.getSupplyRecords(vehicleId).unwrap().firstOrNull { match(it.id) }?.toEdit()
+            RecordArea.REMINDER ->
+                api.getReminders(vehicleId).unwrap().firstOrNull { match(it.id) }?.toEdit()
+            RecordArea.EQUIPMENT ->
+                api.getEquipmentRecords(vehicleId).unwrap().firstOrNull { match(it.id) }?.toEdit()
+            RecordArea.NOTE ->
+                api.getNotes(vehicleId).unwrap().firstOrNull { match(it.id) }?.toEdit()
         }
     }
 
@@ -338,3 +426,8 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         throw mapError(code(), errorBody()?.string())
     }
 }
+
+/** Date layouts LubeLogger may emit depending on locale/culture settings. */
+private val DateFormats: List<DateTimeFormatter> = listOf(
+    "yyyy-MM-dd", "M/d/yyyy", "MM/dd/yyyy", "yyyy/MM/dd", "dd/MM/yyyy", "dd-MM-yyyy", "d.M.yyyy",
+).map { DateTimeFormatter.ofPattern(it) }

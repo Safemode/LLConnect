@@ -127,6 +127,54 @@ internal fun OdometerRecord.toEdit(): RecordEditData = RecordEditData(
     tags = tags,
 )
 
+internal fun PlanRecord.toEdit(): RecordEditData = RecordEditData(
+    id = id ?: 0L,
+    description = description,
+    cost = cost,
+    type = type,
+    priority = priority,
+    progress = progress,
+    notes = notes,
+)
+
+internal fun SupplyRecord.toEdit(): RecordEditData = RecordEditData(
+    id = id ?: 0L,
+    date = date,
+    partNumber = partNumber,
+    partSupplier = partSupplier,
+    partQuantity = partQuantity,
+    description = description,
+    cost = cost,
+    notes = notes,
+    tags = tags,
+)
+
+internal fun ReminderRecord.toEdit(): RecordEditData = RecordEditData(
+    id = id ?: 0L,
+    description = description,
+    dueDate = dueDate,
+    dueOdometer = dueOdometer,
+    metric = metric,
+    notes = notes,
+    tags = tags,
+)
+
+internal fun EquipmentRecord.toEdit(): RecordEditData = RecordEditData(
+    id = id ?: 0L,
+    description = description,
+    isEquipped = isEquipped,
+    notes = notes,
+    tags = tags,
+)
+
+internal fun Note.toEdit(): RecordEditData = RecordEditData(
+    id = id ?: 0L,
+    description = description,
+    noteText = noteText,
+    pinned = pinned,
+    tags = tags,
+)
+
 // ---- Response → update-request mappers, preserving all fields while replacing `files`.
 // Used by the attachments manager so editing files doesn't wipe other data. ----
 
