@@ -65,11 +65,6 @@ fun DashboardScreen(
                         Icon(Icons.Filled.Menu, contentDescription = "Menu")
                     }
                 },
-                actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
-                    }
-                },
             )
         },
     ) { padding ->

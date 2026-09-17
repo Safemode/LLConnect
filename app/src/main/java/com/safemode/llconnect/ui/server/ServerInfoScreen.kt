@@ -9,9 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -86,7 +84,10 @@ fun ServerInfoScreen(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Signed in", style = MaterialTheme.typography.titleMedium)
-                            InfoRow("User", s.data.user?.userName ?: "—")
+                            InfoRow(
+                                label = if (s.data.usingApiKey) "API Key Name" else "User",
+                                value = s.data.user?.userName ?: "—",
+                            )
                             InfoRow("Email", s.data.user?.emailAddress ?: "—")
                             InfoRow("Admin", if (s.data.user?.isAdmin == true) "Yes" else "No")
                             InfoRow("Root", if (s.data.user?.isRootUser == true) "Yes" else "No")
@@ -97,13 +98,6 @@ fun ServerInfoScreen(
                             Text("Instance", style = MaterialTheme.typography.titleMedium)
                             InfoRow("Version", s.data.version ?: "—")
                         }
-                    }
-                    Button(
-                        onClick = viewModel::makeBackup,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Filled.Backup, contentDescription = null)
-                        Text("  Create server backup")
                     }
                 }
             }

@@ -1,20 +1,40 @@
 package com.safemode.llconnect.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
@@ -23,14 +43,19 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.safemode.llconnect.ui.about.AboutScreen
 import com.safemode.llconnect.ui.attachments.AttachmentsScreen
 import com.safemode.llconnect.ui.dashboard.DashboardScreen
+import com.safemode.llconnect.ui.history.HistoryScreen
 import com.safemode.llconnect.ui.navigation.Routes
 import com.safemode.llconnect.ui.navigation.TopDestination
 import com.safemode.llconnect.ui.records.RecordFormScreen
 import com.safemode.llconnect.ui.records.RecordsScreen
+import com.safemode.llconnect.ui.reminders.RemindersScreen
+import com.safemode.llconnect.ui.reports.ReportsScreen
 import com.safemode.llconnect.ui.server.ServerInfoScreen
 import com.safemode.llconnect.ui.settings.SettingsScreen
+import com.safemode.llconnect.ui.tools.ToolsScreen
 import com.safemode.llconnect.ui.vehicles.VehicleDetailScreen
 import com.safemode.llconnect.ui.vehicles.VehicleFormScreen
 import com.safemode.llconnect.ui.vehicles.VehiclesScreen
@@ -47,40 +72,70 @@ fun LLConnectRoot() {
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
+    // Back gesture handling:
+    // 1. If the drawer is open, back closes it first.
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+    // 2. On the start destination, require a second back press within 2s to exit.
+    val context = LocalContext.current
+    var lastBackPress by remember { mutableLongStateOf(0L) }
+    BackHandler(enabled = currentRoute == Routes.DASHBOARD && !drawerState.isOpen) {
+        val now = System.currentTimeMillis()
+        if (now - lastBackPress < 2000L) {
+            context.findActivity()?.finish()
+        } else {
+            lastBackPress = now
+            Toast.makeText(context, "Press back again to exit", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         // Swipe from the left edge to open, and swipe to close while open.
         drawerContent = {
-            ModalDrawerSheet {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "LLConnect",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = "LubeLogger companion",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            val navigateTo: (TopDestination) -> Unit = { dest ->
+                scope.launch { drawerState.close() }
+                if (currentRoute != dest.route) {
+                    navController.navigate(dest.route) {
+                        popUpTo(Routes.DASHBOARD)
+                        launchSingleTop = true
+                    }
                 }
-                HorizontalDivider()
-                TopDestination.entries.forEach { dest ->
-                    NavigationDrawerItem(
-                        icon = { Icon(dest.icon, contentDescription = null) },
-                        label = { Text(dest.label) },
-                        selected = currentRoute == dest.route,
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            if (currentRoute != dest.route) {
-                                navController.navigate(dest.route) {
-                                    popUpTo(Routes.DASHBOARD)
-                                    launchSingleTop = true
-                                }
-                            }
-                        },
-                        modifier = Modifier.padding(horizontal = 12.dp),
+            }
+            ModalDrawerSheet {
+                Column(modifier = Modifier.fillMaxHeight()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "LLConnect",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "LubeLogger companion",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    HorizontalDivider()
+                    // Primary destinations at the top; tools/server/about/settings at the bottom.
+                    val bottomItems = listOf(
+                        TopDestination.TOOLS,
+                        TopDestination.SERVER,
+                        TopDestination.ABOUT,
+                        TopDestination.SETTINGS,
                     )
+                    TopDestination.entries
+                        .filter { it !in bottomItems }
+                        .forEach { dest ->
+                            DrawerItem(dest, currentRoute == dest.route) { navigateTo(dest) }
+                        }
+                    Spacer(modifier = Modifier.weight(1f))
+                    HorizontalDivider()
+                    bottomItems.forEach { dest ->
+                        DrawerItem(dest, currentRoute == dest.route) { navigateTo(dest) }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         },
@@ -189,12 +244,73 @@ fun LLConnectRoot() {
                     onBack = { navController.popBackStack() },
                 )
             }
+            composable(Routes.REMINDERS) {
+                RemindersScreen(onOpenDrawer = openDrawer)
+            }
+            composable(Routes.HISTORY) {
+                HistoryScreen(onOpenDrawer = openDrawer)
+            }
+            composable(Routes.REPORTS) {
+                ReportsScreen(onOpenDrawer = openDrawer)
+            }
+            composable(Routes.TOOLS) {
+                ToolsScreen(onOpenDrawer = openDrawer)
+            }
             composable(Routes.SERVER) {
                 ServerInfoScreen(onOpenDrawer = openDrawer)
+            }
+            composable(Routes.ABOUT) {
+                AboutScreen(onOpenDrawer = openDrawer)
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(onOpenDrawer = openDrawer)
             }
         }
     }
+}
+
+@Composable
+private fun DrawerItem(dest: TopDestination, selected: Boolean, onClick: () -> Unit) {
+    // The item keeps the standard M3 drawer-item footprint (56dp), but the selected
+    // highlight pill is shorter top-to-bottom (inset vertically inside the row).
+    val container = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+    val content =
+        if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(container)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(dest.icon, contentDescription = null, tint = content)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = dest.label,
+                style = MaterialTheme.typography.labelLarge,
+                color = content,
+            )
+        }
+    }
+}
+
+/** Unwraps the [Activity] from a (possibly wrapped) Compose [Context]. */
+private fun Context.findActivity(): Activity? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) return context
+        context = context.baseContext
+    }
+    return null
 }

@@ -1,15 +1,25 @@
 package com.safemode.llconnect.ui.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 
 object Routes {
     const val DASHBOARD = "dashboard"
     const val VEHICLES = "vehicles"
+    const val REMINDERS = "reminders"
+    const val HISTORY = "history"
+    const val REPORTS = "reports"
+    const val TOOLS = "tools"
+    const val ABOUT = "about"
     const val SERVER = "server"
     const val SETTINGS = "settings"
 
@@ -37,6 +47,11 @@ object Routes {
 enum class TopDestination(val route: String, val label: String, val icon: ImageVector) {
     DASHBOARD(Routes.DASHBOARD, "Dashboard", Icons.Filled.Dashboard),
     VEHICLES(Routes.VEHICLES, "Vehicles", Icons.Filled.DirectionsCar),
+    REMINDERS(Routes.REMINDERS, "Reminders", Icons.Filled.NotificationsActive),
+    HISTORY(Routes.HISTORY, "History", Icons.Filled.History),
+    REPORTS(Routes.REPORTS, "Reports", Icons.Filled.Assessment),
+    TOOLS(Routes.TOOLS, "Tools", Icons.Filled.Construction),
     SERVER(Routes.SERVER, "Server", Icons.Filled.Dns),
+    ABOUT(Routes.ABOUT, "About", Icons.Filled.Info),
     SETTINGS(Routes.SETTINGS, "Settings", Icons.Filled.Settings),
 }

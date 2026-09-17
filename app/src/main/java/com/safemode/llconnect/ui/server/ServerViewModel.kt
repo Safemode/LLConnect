@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.remote.models.WhoAmI
+import com.safemode.llconnect.data.settings.AuthMode
 import com.safemode.llconnect.data.settings.ConnectionConfig
 import com.safemode.llconnect.ui.common.UiState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,8 @@ import kotlinx.coroutines.launch
 data class ServerInfo(
     val user: WhoAmI?,
     val version: String?,
+    /** True when connected via API key, where whoami returns the key's name, not a username. */
+    val usingApiKey: Boolean,
 )
 
 class ServerViewModel : ViewModel() {
@@ -69,7 +72,13 @@ class ServerViewModel : ViewModel() {
             return
         }
         val version = repository.version().getOrNull()
-        _state.value = UiState.Success(ServerInfo(user = who.getOrNull(), version = version))
+        _state.value = UiState.Success(
+            ServerInfo(
+                user = who.getOrNull(),
+                version = version,
+                usingApiKey = config.authMode == AuthMode.API_KEY,
+            ),
+        )
     }
 
     /** Fields that, when changed, should trigger a reload. */

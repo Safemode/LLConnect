@@ -38,19 +38,61 @@ traffic is enabled in the manifest.
 | Odometer | ✅ | ✅ | ✅ | ✅ |
 | Taxes | ✅ | ✅ | ✅ | ✅ |
 | Planner / Supplies / Reminders / Equipment / Notes | ✅ | ✅ | ✅ | ✅ |
-| Server info / whoami / version / backup | ✅ | — | — | — |
+| Reminders / History / Reports (garage-wide) | ✅ | — | — | — |
+| Server info / whoami / version · Tools (backup / cleanup / temp files / send reminders) | ✅ | — | — | — |
+
+Add/edit forms are unified in `RecordFormScreen`, which shows only the fields each area
+supports. Enum-backed fields (planner type/priority/progress, reminder metric) use
+dropdowns whose values match the OpenAPI schema; the reminder form reveals the due-date
+picker and/or due-odometer field to match the selected metric.
 
 Records that carry attachments (everything except Reminders) have a full attachment
 manager — **view/open, upload, rename, and delete** — reachable from the paperclip icon
 on each record. Uploads use `/api/documents/upload`; view downloads the file through the
 authenticated client and opens it with an external viewer via a `FileProvider`.
 
-The full REST surface (including per-type add/update endpoints) is defined in
-`LubeLoggerApi.kt` and `LubeLoggerRepository.kt`, so the remaining add/edit forms are
-incremental UI work on top of the existing plumbing.
+### Vehicle dashboard
+
+Opening a vehicle shows a dashboard with a hero-image header (loaded through the
+authenticated image client, with a text fallback when no photo is set) and the record
+areas grouped into **Records** and **Planning & reference**. Each area tile displays a
+live record count and the most-recent activity date — the soonest due date for
+Reminders; count-only for Equipment and Notes, which have no date field. Summaries are
+fetched in parallel and fill in lazily, so the screen paints immediately.
+
+Vehicle and record lists support pull-to-refresh (which also clears the image cache), and
+screens reload automatically when connection settings change.
+
+### Navigation drawer
+
+The drawer holds the primary destinations (Dashboard, Vehicles, and the garage-wide views
+below) at the top, with Tools, Server, About, and Settings pinned to the bottom. Swipe from
+the left edge to open it; on the dashboard, a second back press within two seconds exits the
+app (a first press closes the drawer if it's open).
+
+### Garage-wide views
+
+Several drawer screens aggregate across **all** vehicles using LubeLogger's `*/all`
+endpoints, resolving each row's vehicle name from a single vehicle-list fetch:
+
+- **Reminders** — every reminder across all vehicles, soonest due first, with the vehicle,
+  due date/odometer, and urgency (`/api/vehicle/reminders/all`).
+- **History** — a unified activity feed (service, repair, upgrade, tax, fuel, odometer)
+  fetched in parallel and sorted newest first, each row showing its vehicle and cost.
+- **Reports** — total spend with breakdowns by category and by vehicle, shown as
+  proportion bars, derived from the same activity data.
+- **Tools** — server maintenance actions: create a backup, clean up temp/orphaned files
+  (with a deep-clean option), list temp files, and send reminders to collaborators. The
+  server enforces the required admin/root permissions.
+- **About** — app version, the connected host, and a link to the LubeLogger project.
+
+The server also reports the signed-in identity: under API-key auth LubeLogger returns the
+**API key's name** (labeled *API Key Name*), while username/password auth shows the actual
+**User**.
 
 ## Suggested next steps
 
+- Date-range and tag filters on History/Reports (the `startDate`, `endDate`, `tags` params).
+- Fuel-economy unit selection (the `useMPG` / `useUKMPG` params on the gas endpoints).
 - Extra-field editing across records and vehicles.
-- Date/tag filtering on record lists (the `*/all`, `startDate`, `endDate`, `tags` params).
 - Optional biometric gate (`setUserAuthenticationRequired`) on the Keystore secret key.
