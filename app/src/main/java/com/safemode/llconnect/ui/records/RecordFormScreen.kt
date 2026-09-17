@@ -37,13 +37,49 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.RecordArea
+import com.safemode.llconnect.data.remote.models.EquipmentRecordRequest
 import com.safemode.llconnect.data.remote.models.GasRecordRequest
 import com.safemode.llconnect.data.remote.models.GenericRecordRequest
+import com.safemode.llconnect.data.remote.models.NoteRequest
 import com.safemode.llconnect.data.remote.models.OdometerRecordRequest
+import com.safemode.llconnect.data.remote.models.PlanRecordRequest
+import com.safemode.llconnect.data.remote.models.ReminderRecordRequest
+import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
 import com.safemode.llconnect.data.remote.models.TaxRecordRequest
 import com.safemode.llconnect.ui.common.DateField
+import com.safemode.llconnect.ui.common.DropdownField
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+
+private val PlanTypes = listOf("ServiceRecord", "RepairRecord", "UpgradeRecord")
+private val PlanPriorities = listOf("Low", "Normal", "Critical")
+private val PlanProgress = listOf("Backlog", "InProgress", "Testing")
+private val ReminderMetrics = listOf("Both", "Odometer", "Date")
+
+/** All editable form fields, bundled so [submit] stays readable. */
+private data class FormValues(
+    val date: String,
+    val odometer: Long?,
+    val description: String?,
+    val cost: Double?,
+    val fuelConsumed: Double?,
+    val isFillToFull: Boolean,
+    val missedFuelUp: Boolean,
+    val notes: String?,
+    val tags: String?,
+    val planType: String,
+    val priority: String,
+    val progress: String,
+    val partNumber: String?,
+    val partSupplier: String?,
+    val partQuantity: Long?,
+    val dueDate: String,
+    val dueOdometer: Long?,
+    val metric: String,
+    val isEquipped: Boolean,
+    val noteText: String?,
+    val pinned: Boolean,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +102,23 @@ fun RecordFormScreen(
     var missedFuelUp by remember { mutableStateOf(false) }
     var notes by remember { mutableStateOf("") }
     var tags by remember { mutableStateOf("") }
+    // Planner
+    var planType by remember { mutableStateOf("ServiceRecord") }
+    var priority by remember { mutableStateOf("Normal") }
+    var progress by remember { mutableStateOf("Backlog") }
+    // Supplies
+    var partNumber by remember { mutableStateOf("") }
+    var partSupplier by remember { mutableStateOf("") }
+    var partQuantity by remember { mutableStateOf("") }
+    // Reminders
+    var dueDate by remember { mutableStateOf(LocalDate.now().toString()) }
+    var dueOdometer by remember { mutableStateOf("") }
+    var metric by remember { mutableStateOf("Both") }
+    // Equipment
+    var isEquipped by remember { mutableStateOf(true) }
+    // Notes
+    var noteText by remember { mutableStateOf("") }
+    var pinned by remember { mutableStateOf(false) }
 
     var loading by remember { mutableStateOf(isEdit) }
     var submitting by remember { mutableStateOf(false) }
@@ -87,6 +140,18 @@ fun RecordFormScreen(
                     missedFuelUp = data.missedFuelUp ?: false
                     notes = data.notes.orEmpty()
                     tags = data.tags.orEmpty()
+                    data.type?.let { planType = it }
+                    data.priority?.let { priority = it }
+                    data.progress?.let { progress = it }
+                    partNumber = data.partNumber.orEmpty()
+                    partSupplier = data.partSupplier.orEmpty()
+                    partQuantity = data.partQuantity?.toString() ?: ""
+                    dueDate = data.dueDate?.ifBlank { dueDate } ?: dueDate
+                    dueOdometer = data.dueOdometer?.toString() ?: ""
+                    data.metric?.let { metric = it }
+                    isEquipped = data.isEquipped ?: true
+                    noteText = data.noteText.orEmpty()
+                    pinned = data.pinned ?: false
                 } else {
                     error = "Could not load this record for editing."
                 }
@@ -99,9 +164,20 @@ fun RecordFormScreen(
         )
     }
 
-    val showOdometer = area in setOf(RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE, RecordArea.GAS, RecordArea.ODOMETER)
-    val showDescription = area in setOf(RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE, RecordArea.TAX)
-    val showCost = area in setOf(RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE, RecordArea.TAX, RecordArea.GAS)
+    val showDate = area in setOf(
+        RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE,
+        RecordArea.GAS, RecordArea.ODOMETER, RecordArea.TAX, RecordArea.SUPPLY,
+    )
+    val showOdometer = area in setOf(
+        RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE,
+        RecordArea.GAS, RecordArea.ODOMETER,
+    )
+    val showDescription = area !in setOf(RecordArea.GAS, RecordArea.ODOMETER)
+    val showCost = area in setOf(
+        RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE,
+        RecordArea.TAX, RecordArea.GAS, RecordArea.PLAN, RecordArea.SUPPLY,
+    )
+    val showTags = area != RecordArea.PLAN
     val showGas = area == RecordArea.GAS
     val verb = if (isEdit) "Edit" else "Add"
 
@@ -130,8 +206,9 @@ fun RecordFormScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            DateField(label = "Date", value = date, onValueChange = { date = it })
-
+            if (showDate) {
+                DateField(label = "Date", value = date, onValueChange = { date = it })
+            }
             if (showOdometer) {
                 OutlinedTextField(
                     value = odometer,
@@ -150,6 +227,59 @@ fun RecordFormScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            // ---- Planner ----
+            if (area == RecordArea.PLAN) {
+                DropdownField(label = "Type", options = PlanTypes, value = planType, onValueChange = { planType = it })
+                DropdownField(label = "Priority", options = PlanPriorities, value = priority, onValueChange = { priority = it })
+                DropdownField(label = "Progress", options = PlanProgress, value = progress, onValueChange = { progress = it })
+            }
+
+            // ---- Supplies ----
+            if (area == RecordArea.SUPPLY) {
+                OutlinedTextField(
+                    value = partNumber,
+                    onValueChange = { partNumber = it },
+                    label = { Text("Part number") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = partSupplier,
+                    onValueChange = { partSupplier = it },
+                    label = { Text("Supplier") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = partQuantity,
+                    onValueChange = { partQuantity = it.filter(Char::isDigit) },
+                    label = { Text("Quantity") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            // ---- Reminders ----
+            if (area == RecordArea.REMINDER) {
+                DropdownField(label = "Metric", options = ReminderMetrics, value = metric, onValueChange = { metric = it })
+                if (metric != "Odometer") {
+                    DateField(label = "Due date", value = dueDate, onValueChange = { dueDate = it })
+                }
+                if (metric != "Date") {
+                    OutlinedTextField(
+                        value = dueOdometer,
+                        onValueChange = { dueOdometer = it.filter(Char::isDigit) },
+                        label = { Text("Due odometer") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            // ---- Gas ----
             if (showGas) {
                 OutlinedTextField(
                     value = fuelConsumed,
@@ -162,6 +292,7 @@ fun RecordFormScreen(
                 ToggleRow("Fill to full", isFillToFull) { isFillToFull = it }
                 ToggleRow("Missed a previous fuel-up", missedFuelUp) { missedFuelUp = it }
             }
+
             if (showCost) {
                 OutlinedTextField(
                     value = cost,
@@ -172,19 +303,39 @@ fun RecordFormScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            // ---- Equipment ----
+            if (area == RecordArea.EQUIPMENT) {
+                ToggleRow("Currently equipped", isEquipped) { isEquipped = it }
+            }
+
+            // ---- Notes ----
+            if (area == RecordArea.NOTE) {
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    label = { Text("Note text") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ToggleRow("Pinned", pinned) { pinned = it }
+            }
+
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
                 label = { Text("Notes") },
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
-                value = tags,
-                onValueChange = { tags = it },
-                label = { Text("Tags (space-separated)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (showTags) {
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags (space-separated)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             if (error != null) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
@@ -199,15 +350,29 @@ fun RecordFormScreen(
                             area = area,
                             vehicleId = vehicleId,
                             id = recordId.toLongOrNull().takeIf { isEdit },
-                            date = date,
-                            odometer = odometer.toLongOrNull(),
-                            description = description.ifBlank { null },
-                            cost = cost.toDoubleOrNull(),
-                            fuelConsumed = fuelConsumed.toDoubleOrNull(),
-                            isFillToFull = isFillToFull,
-                            missedFuelUp = missedFuelUp,
-                            notes = notes.ifBlank { null },
-                            tags = tags.ifBlank { null },
+                            values = FormValues(
+                                date = date,
+                                odometer = odometer.toLongOrNull(),
+                                description = description.ifBlank { null },
+                                cost = cost.toDoubleOrNull(),
+                                fuelConsumed = fuelConsumed.toDoubleOrNull(),
+                                isFillToFull = isFillToFull,
+                                missedFuelUp = missedFuelUp,
+                                notes = notes.ifBlank { null },
+                                tags = tags.ifBlank { null },
+                                planType = planType,
+                                priority = priority,
+                                progress = progress,
+                                partNumber = partNumber.ifBlank { null },
+                                partSupplier = partSupplier.ifBlank { null },
+                                partQuantity = partQuantity.toLongOrNull(),
+                                dueDate = dueDate,
+                                dueOdometer = dueOdometer.toLongOrNull(),
+                                metric = metric,
+                                isEquipped = isEquipped,
+                                noteText = noteText.ifBlank { null },
+                                pinned = pinned,
+                            ),
                         )
                         submitting = false
                         result.fold(
@@ -249,15 +414,7 @@ private suspend fun submit(
     area: RecordArea,
     vehicleId: String,
     id: Long?,
-    date: String,
-    odometer: Long?,
-    description: String?,
-    cost: Double?,
-    fuelConsumed: Double?,
-    isFillToFull: Boolean,
-    missedFuelUp: Boolean,
-    notes: String?,
-    tags: String?,
+    values: FormValues,
 ): Result<Unit> {
     val repo = Graph.repository
     val isEdit = id != null
@@ -265,50 +422,107 @@ private suspend fun submit(
         RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE -> {
             val body = GenericRecordRequest(
                 id = id,
-                date = date,
-                odometer = odometer,
-                description = description,
-                cost = cost,
-                notes = notes,
-                tags = tags,
+                date = values.date,
+                odometer = values.odometer,
+                description = values.description,
+                cost = values.cost,
+                notes = values.notes,
+                tags = values.tags,
             )
             if (isEdit) repo.updateServiceLike(area, body) else repo.addServiceLike(area, vehicleId, body)
         }
         RecordArea.TAX -> {
             val body = TaxRecordRequest(
                 id = id,
-                date = date,
-                description = description,
-                cost = cost,
-                notes = notes,
-                tags = tags,
+                date = values.date,
+                description = values.description,
+                cost = values.cost,
+                notes = values.notes,
+                tags = values.tags,
             )
             if (isEdit) repo.updateTax(body) else repo.addTax(vehicleId, body)
         }
         RecordArea.GAS -> {
             val body = GasRecordRequest(
                 id = id,
-                date = date,
-                odometer = odometer,
-                fuelConsumed = fuelConsumed,
-                cost = cost,
-                isFillToFull = isFillToFull,
-                missedFuelUp = missedFuelUp,
-                notes = notes,
-                tags = tags,
+                date = values.date,
+                odometer = values.odometer,
+                fuelConsumed = values.fuelConsumed,
+                cost = values.cost,
+                isFillToFull = values.isFillToFull,
+                missedFuelUp = values.missedFuelUp,
+                notes = values.notes,
+                tags = values.tags,
             )
             if (isEdit) repo.updateGas(body) else repo.addGas(vehicleId, body)
         }
         RecordArea.ODOMETER -> {
             val body = OdometerRecordRequest(
                 id = id,
-                date = date,
-                odometer = odometer,
-                notes = notes,
-                tags = tags,
+                date = values.date,
+                odometer = values.odometer,
+                notes = values.notes,
+                tags = values.tags,
             )
             if (isEdit) repo.updateOdometer(body) else repo.addOdometer(vehicleId, body)
         }
-        else -> Result.failure(IllegalArgumentException("Editing ${area.label} records isn't supported yet."))
+        RecordArea.PLAN -> {
+            val body = PlanRecordRequest(
+                id = id,
+                description = values.description,
+                cost = values.cost,
+                type = values.planType,
+                priority = values.priority,
+                progress = values.progress,
+                notes = values.notes,
+            )
+            if (isEdit) repo.updatePlan(body) else repo.addPlan(vehicleId, body)
+        }
+        RecordArea.SUPPLY -> {
+            val body = SupplyRecordRequest(
+                id = id,
+                date = values.date,
+                partNumber = values.partNumber,
+                partSupplier = values.partSupplier,
+                partQuantity = values.partQuantity,
+                description = values.description,
+                cost = values.cost,
+                notes = values.notes,
+                tags = values.tags,
+            )
+            if (isEdit) repo.updateSupply(body) else repo.addSupply(vehicleId, body)
+        }
+        RecordArea.REMINDER -> {
+            val body = ReminderRecordRequest(
+                id = id,
+                description = values.description,
+                dueDate = if (values.metric != "Odometer") values.dueDate else null,
+                dueOdometer = if (values.metric != "Date") values.dueOdometer else null,
+                metric = values.metric,
+                notes = values.notes,
+                tags = values.tags,
+            )
+            if (isEdit) repo.updateReminder(body) else repo.addReminder(vehicleId, body)
+        }
+        RecordArea.EQUIPMENT -> {
+            val body = EquipmentRecordRequest(
+                id = id,
+                description = values.description,
+                isEquipped = values.isEquipped,
+                notes = values.notes,
+                tags = values.tags,
+            )
+            if (isEdit) repo.updateEquipment(body) else repo.addEquipment(vehicleId, body)
+        }
+        RecordArea.NOTE -> {
+            val body = NoteRequest(
+                id = id,
+                description = values.description,
+                noteText = values.noteText,
+                pinned = values.pinned,
+                tags = values.tags,
+            )
+            if (isEdit) repo.updateNote(body) else repo.addNote(vehicleId, body)
+        }
     }
 }

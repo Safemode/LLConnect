@@ -37,7 +37,7 @@ traffic is enabled in the manifest.
 | Fuel (Gas) | ✅ | ✅ | ✅ | ✅ |
 | Odometer | ✅ | ✅ | ✅ | ✅ |
 | Taxes | ✅ | ✅ | ✅ | ✅ |
-| Planner / Supplies / Reminders / Equipment / Notes | ✅ | *(API wired, forms TBD)* | *(API wired, forms TBD)* | ✅ |
+| Planner / Supplies / Reminders / Equipment / Notes | ✅ | ✅ | ✅ | ✅ |
 | Server info / whoami / version / backup | ✅ | — | — | — |
 
 Records that carry attachments (everything except Reminders) have a full attachment
@@ -51,7 +51,6 @@ incremental UI work on top of the existing plumbing.
 
 ## Suggested next steps
 
-- Add/edit forms for Planner, Supplies, Reminders, Equipment, and Notes.
 - Extra-field editing across records and vehicles.
 - Date/tag filtering on record lists (the `*/all`, `startDate`, `endDate`, `tags` params).
 - Optional biometric gate (`setUserAuthenticationRequired`) on the Keystore secret key.

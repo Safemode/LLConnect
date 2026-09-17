@@ -49,10 +49,7 @@ fun LLConnectRoot() {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        // Only allow swipe gestures while the drawer is already open (to close it).
-        // This stops edge/vertical swipes from opening the drawer and fighting with
-        // scrolling and pull-to-refresh; the hamburger button always opens it.
-        gesturesEnabled = drawerState.isOpen,
+        // Swipe from the left edge to open, and swipe to close while open.
         drawerContent = {
             ModalDrawerSheet {
                 Column(modifier = Modifier.padding(16.dp)) {

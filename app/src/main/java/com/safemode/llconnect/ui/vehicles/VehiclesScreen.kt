@@ -192,7 +192,7 @@ fun VehicleCard(
 }
 
 /** Builds an absolute URL for the vehicle image when it is a relative path. */
-private fun vehicleImageUrl(vehicle: Vehicle, baseUrl: String?): String? {
+internal fun vehicleImageUrl(vehicle: Vehicle, baseUrl: String?): String? {
     val loc = vehicle.imageLocation?.takeIf { it.isNotBlank() } ?: return null
     if (loc.startsWith("http")) return loc
     val base = (baseUrl ?: return null).trimEnd('/')

@@ -10,8 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -40,12 +41,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.safemode.llconnect.data.AreaSummary
 import com.safemode.llconnect.data.RecordArea
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.ui.common.ErrorState
@@ -70,6 +74,8 @@ fun VehicleDetailScreen(
     val viewModel: VehicleDetailViewModel =
         viewModel(key = "vehicle-$vehicleId", factory = detailFactory(vehicleId))
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val baseUrl by viewModel.baseUrl.collectAsStateWithLifecycle()
+    val summaries by viewModel.summaries.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val deleting by viewModel.deleting.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
@@ -139,7 +145,12 @@ fun VehicleDetailScreen(
                 UiState.Loading -> LoadingState()
                 UiState.NotConfigured -> ErrorState(message = "Not connected.")
                 is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
-                is UiState.Success -> VehicleDetailContent(vehicle = s.data, onOpenArea = onOpenArea)
+                is UiState.Success -> VehicleDetailContent(
+                    vehicle = s.data,
+                    baseUrl = baseUrl,
+                    summaries = summaries,
+                    onOpenArea = onOpenArea,
+                )
             }
         }
     }
@@ -167,77 +178,139 @@ fun VehicleDetailScreen(
     }
 }
 
+/** Logging areas the user touches most, split from planning/reference for readability. */
+private val LoggingAreas = listOf(
+    RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE,
+    RecordArea.GAS, RecordArea.ODOMETER, RecordArea.TAX,
+)
+private val PlanningAreas = listOf(
+    RecordArea.PLAN, RecordArea.SUPPLY, RecordArea.REMINDER,
+    RecordArea.EQUIPMENT, RecordArea.NOTE,
+)
+
 @Composable
-private fun VehicleDetailContent(vehicle: Vehicle, onOpenArea: (String) -> Unit) {
+private fun VehicleDetailContent(
+    vehicle: Vehicle,
+    baseUrl: String?,
+    summaries: Map<RecordArea, AreaSummary>,
+    onOpenArea: (String) -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-            VehicleHeader(vehicle)
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            VehicleHeader(vehicle, baseUrl)
         }
-        itemsIndexed(RecordArea.entries) { _, area ->
-            AreaTile(area = area, onClick = { onOpenArea(area.name) })
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            SectionHeader("Records")
+        }
+        items(LoggingAreas) { area ->
+            AreaTile(area = area, summary = summaries[area], onClick = { onOpenArea(area.name) })
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            SectionHeader("Planning & reference")
+        }
+        items(PlanningAreas) { area ->
+            AreaTile(area = area, summary = summaries[area], onClick = { onOpenArea(area.name) })
         }
     }
 }
 
 @Composable
-private fun VehicleHeader(vehicle: Vehicle) {
+private fun VehicleHeader(vehicle: Vehicle, baseUrl: String?) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = vehicle.displayName,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            val details = buildList {
-                vehicle.licensePlate?.takeIf { it.isNotBlank() }?.let { add("Plate: $it") }
-                vehicle.tags?.takeIf { it.isNotEmpty() }?.let { add("Tags: ${it.joinToString(" ")}") }
-                if (vehicle.isElectric == true) add("Electric")
-                if (vehicle.isDiesel == true) add("Diesel")
-                if (vehicle.useHours == true) add("Tracked by engine hours")
-                vehicle.purchaseDate?.takeIf { it.isNotBlank() }?.let { add("Purchased: $it") }
-            }
-            details.forEach {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
+        Column(modifier = Modifier.fillMaxWidth()) {
+            val imageUrl = vehicleImageUrl(vehicle, baseUrl)
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
                 )
             }
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = vehicle.displayName,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                val details = buildList {
+                    vehicle.licensePlate?.takeIf { it.isNotBlank() }?.let { add("Plate: $it") }
+                    vehicle.tags?.takeIf { it.isNotEmpty() }?.let { add("Tags: ${it.joinToString(" ")}") }
+                    if (vehicle.isElectric == true) add("Electric")
+                    if (vehicle.isDiesel == true) add("Diesel")
+                    if (vehicle.useHours == true) add("Tracked by engine hours")
+                    vehicle.purchaseDate?.takeIf { it.isNotBlank() }?.let { add("Purchased: $it") }
+                }
+                details.forEach {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun AreaTile(area: RecordArea, onClick: () -> Unit) {
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+}
+
+@Composable
+private fun AreaTile(area: RecordArea, summary: AreaSummary?, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1.4f)
+            .aspectRatio(1.3f)
             .clickable(onClick = onClick),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Icon(
                 imageVector = area.icon(),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(28.dp),
             )
             Text(
                 text = area.label,
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 8.dp),
             )
+            if (summary != null) {
+                Text(
+                    text = "${summary.count} ${if (summary.count == 1) "record" else "records"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                summary.lastDate?.let { date ->
+                    val prefix = if (area == RecordArea.REMINDER) "Due " else "Last "
+                    Text(
+                        text = prefix + date,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
