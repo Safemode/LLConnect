@@ -2,6 +2,13 @@ package com.safemode.llconnect.data.settings
 
 enum class AuthMode { API_KEY, BASIC }
 
+/** How fuel economy is reported by the gas endpoints. */
+enum class FuelEconomyUnit(val label: String) {
+    DEFAULT("Server default"),
+    US_MPG("US MPG"),
+    UK_MPG("UK MPG"),
+}
+
 /** User-supplied connection details for a self-hosted LubeLogger instance. */
 data class ConnectionConfig(
     val scheme: String = "http",
@@ -12,6 +19,7 @@ data class ConnectionConfig(
     val basicUsername: String = "",
     val basicPassword: String = "",
     val cultureInvariant: Boolean = true,
+    val fuelEconomyUnit: FuelEconomyUnit = FuelEconomyUnit.DEFAULT,
 ) {
     /** True once there is enough to attempt a connection. */
     val isConfigured: Boolean

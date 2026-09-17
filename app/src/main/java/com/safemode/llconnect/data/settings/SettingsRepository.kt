@@ -28,6 +28,7 @@ class SettingsRepository(private val context: Context) {
         val BASIC_USER = stringPreferencesKey("basic_user")
         val BASIC_PASS = stringPreferencesKey("basic_pass")
         val CULTURE_INVARIANT = booleanPreferencesKey("culture_invariant")
+        val FUEL_UNIT = stringPreferencesKey("fuel_unit")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -41,6 +42,9 @@ class SettingsRepository(private val context: Context) {
             basicUsername = prefs[Keys.BASIC_USER] ?: "",
             basicPassword = KeystoreCrypto.decrypt(prefs[Keys.BASIC_PASS] ?: ""),
             cultureInvariant = prefs[Keys.CULTURE_INVARIANT] ?: true,
+            fuelEconomyUnit = runCatching {
+                FuelEconomyUnit.valueOf(prefs[Keys.FUEL_UNIT] ?: "DEFAULT")
+            }.getOrDefault(FuelEconomyUnit.DEFAULT),
         )
     }
 
@@ -54,6 +58,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BASIC_USER] = config.basicUsername
             prefs[Keys.BASIC_PASS] = KeystoreCrypto.encrypt(config.basicPassword)
             prefs[Keys.CULTURE_INVARIANT] = config.cultureInvariant
+            prefs[Keys.FUEL_UNIT] = config.fuelEconomyUnit.name
         }
     }
 }

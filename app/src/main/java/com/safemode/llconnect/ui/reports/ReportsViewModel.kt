@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.CostReport
+import com.safemode.llconnect.ui.common.DateRange
 import com.safemode.llconnect.ui.common.UiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,12 +22,21 @@ class ReportsViewModel : ViewModel() {
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
+    private val _range = MutableStateFlow(DateRange.ALL)
+    val range: StateFlow<DateRange> = _range.asStateFlow()
+
     init {
         load()
     }
 
     fun load() {
         viewModelScope.launch { reload(showLoading = true) }
+    }
+
+    fun setRange(range: DateRange) {
+        if (range == _range.value) return
+        _range.value = range
+        load()
     }
 
     fun refresh() {
@@ -45,7 +55,8 @@ class ReportsViewModel : ViewModel() {
             return
         }
         if (showLoading) _state.value = UiState.Loading
-        _state.value = repository.getCostReport().fold(
+        val (start, end) = _range.value.bounds()
+        _state.value = repository.getCostReport(start, end).fold(
             onSuccess = { UiState.Success(it) },
             onFailure = { UiState.Error(it.message ?: "Failed to build report.") },
         )

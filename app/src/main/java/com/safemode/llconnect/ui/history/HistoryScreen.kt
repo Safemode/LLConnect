@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.safemode.llconnect.data.ActivityItem
+import com.safemode.llconnect.ui.common.DateRangeChips
 import com.safemode.llconnect.ui.common.EmptyState
 import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
@@ -43,6 +44,7 @@ fun HistoryScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val range by viewModel.range.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -56,12 +58,13 @@ fun HistoryScreen(
             )
         },
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = viewModel::refresh,
-            modifier = Modifier.padding(padding),
-        ) {
-            when (val s = state) {
+        androidx.compose.foundation.layout.Column(modifier = Modifier.padding(padding)) {
+            DateRangeChips(selected = range, onSelect = viewModel::setRange)
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = viewModel::refresh,
+            ) {
+                when (val s = state) {
                 UiState.Loading -> LoadingState()
                 UiState.NotConfigured -> ErrorState(message = "Add your server details in Settings first.")
                 is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
@@ -77,6 +80,7 @@ fun HistoryScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(s.data) { item -> ActivityCard(item) }
+                    }
                     }
                 }
             }

@@ -146,7 +146,11 @@ interface LubeLoggerApi {
 
     // ---- Gas Records ----
     @GET("api/vehicle/gasrecords")
-    suspend fun getGasRecords(@Query("vehicleId") vehicleId: String): Response<List<GasRecord>>
+    suspend fun getGasRecords(
+        @Query("vehicleId") vehicleId: String,
+        @Query("useMPG") useMPG: String? = null,
+        @Query("useUKMPG") useUKMPG: String? = null,
+    ): Response<List<GasRecord>>
 
     @POST("api/vehicle/gasrecords/add")
     suspend fun addGasRecord(
@@ -242,22 +246,42 @@ interface LubeLoggerApi {
 
     // ---- Cross-vehicle ("all") reads ----
     @GET("api/vehicle/servicerecords/all")
-    suspend fun getAllServiceRecords(): Response<List<GenericRecord>>
+    suspend fun getAllServiceRecords(
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null,
+    ): Response<List<GenericRecord>>
 
     @GET("api/vehicle/repairrecords/all")
-    suspend fun getAllRepairRecords(): Response<List<GenericRecord>>
+    suspend fun getAllRepairRecords(
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null,
+    ): Response<List<GenericRecord>>
 
     @GET("api/vehicle/upgraderecords/all")
-    suspend fun getAllUpgradeRecords(): Response<List<GenericRecord>>
+    suspend fun getAllUpgradeRecords(
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null,
+    ): Response<List<GenericRecord>>
 
     @GET("api/vehicle/taxrecords/all")
-    suspend fun getAllTaxRecords(): Response<List<GenericRecord>>
+    suspend fun getAllTaxRecords(
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null,
+    ): Response<List<GenericRecord>>
 
     @GET("api/vehicle/gasrecords/all")
-    suspend fun getAllGasRecords(): Response<List<GasRecord>>
+    suspend fun getAllGasRecords(
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null,
+        @Query("useMPG") useMPG: String? = null,
+        @Query("useUKMPG") useUKMPG: String? = null,
+    ): Response<List<GasRecord>>
 
     @GET("api/vehicle/odometerrecords/all")
-    suspend fun getAllOdometerRecords(): Response<List<OdometerRecord>>
+    suspend fun getAllOdometerRecords(
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null,
+    ): Response<List<OdometerRecord>>
 
     @GET("api/vehicle/reminders/all")
     suspend fun getAllReminders(): Response<List<ReminderRecord>>
