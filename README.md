@@ -1,0 +1,57 @@
+# LLConnect
+
+A Material Design 3 Android client for a self-hosted [LubeLogger](https://github.com/hargata/lubelog)
+instance. API calls are modeled on the LubeLogger v1.7.3 OpenAPI schema.
+
+## Getting started
+
+1. Build & install the app (Android Studio, or `./gradlew installDebug`).
+2. Open **Settings** from the navigation drawer and enter:
+   - **Scheme** (HTTP/HTTPS), **Host / IP**, and optional **Port**
+   - **API key** (sent as `x-api-key`) — generate one in LubeLogger under
+     *Settings → API Access* — or switch to **Username / password** (HTTP Basic).
+3. Tap **Save & test** to verify the connection against `/api/whoami`.
+
+Self-hosted instances are often reached over plain HTTP on a LAN address, so cleartext
+traffic is enabled in the manifest.
+
+## Architecture
+
+- **UI:** Jetpack Compose + Material 3 (dynamic color on Android 12+), Navigation Compose,
+  a navigation drawer, and a `ViewModel` + `StateFlow` per screen.
+- **Networking:** Retrofit + OkHttp + Moshi. The base URL is built dynamically from the
+  saved connection settings; an `AuthInterceptor` injects auth and the `culture-invariant`
+  header on every request. Custom Moshi adapters (`FlexDouble`/`FlexLong`/`FlexString`)
+  tolerate both locale-mode (stringy) and invariant-mode (typed) responses.
+- **Storage:** DataStore holds the connection config. Secrets (API key, Basic password) are
+  encrypted with an AES-256/GCM key in the Android Keystore (`KeystoreCrypto`) — only
+  ciphertext is written to disk. Legacy plaintext values are migrated on the next save.
+- **DI:** a small manual `Graph` container initialized from `LLConnectApp`.
+
+## Feature areas
+
+| Area | Read | Add | Edit | Delete |
+|------|:----:|:---:|:----:|:------:|
+| Vehicles | ✅ | ✅ | ✅ | ✅ |
+| Service / Repair / Upgrade | ✅ | ✅ | ✅ | ✅ |
+| Fuel (Gas) | ✅ | ✅ | ✅ | ✅ |
+| Odometer | ✅ | ✅ | ✅ | ✅ |
+| Taxes | ✅ | ✅ | ✅ | ✅ |
+| Planner / Supplies / Reminders / Equipment / Notes | ✅ | *(API wired, forms TBD)* | *(API wired, forms TBD)* | ✅ |
+| Server info / whoami / version / backup | ✅ | — | — | — |
+
+Records that carry attachments (everything except Reminders) have a full attachment
+manager — **view/open, upload, rename, and delete** — reachable from the paperclip icon
+on each record. Uploads use `/api/documents/upload`; view downloads the file through the
+authenticated client and opens it with an external viewer via a `FileProvider`.
+
+The full REST surface (including per-type add/update endpoints) is defined in
+`LubeLoggerApi.kt` and `LubeLoggerRepository.kt`, so the remaining add/edit forms are
+incremental UI work on top of the existing plumbing.
+
+## Suggested next steps
+
+- Add/edit forms for Planner, Supplies, Reminders, Equipment, and Notes.
+- Extra-field editing across records and vehicles.
+- Date/tag filtering on record lists (the `*/all`, `startDate`, `endDate`, `tags` params).
+- Optional biometric gate (`setUserAuthenticationRequired`) on the Keystore secret key.
