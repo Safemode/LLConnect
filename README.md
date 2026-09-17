@@ -40,14 +40,27 @@ traffic is enabled in the manifest.
 | Planner / Supplies / Reminders / Equipment / Notes | ✅ | ✅ | ✅ | ✅ |
 | Server info / whoami / version / backup | ✅ | — | — | — |
 
+Add/edit forms are unified in `RecordFormScreen`, which shows only the fields each area
+supports. Enum-backed fields (planner type/priority/progress, reminder metric) use
+dropdowns whose values match the OpenAPI schema; the reminder form reveals the due-date
+picker and/or due-odometer field to match the selected metric.
+
 Records that carry attachments (everything except Reminders) have a full attachment
 manager — **view/open, upload, rename, and delete** — reachable from the paperclip icon
 on each record. Uploads use `/api/documents/upload`; view downloads the file through the
 authenticated client and opens it with an external viewer via a `FileProvider`.
 
-The full REST surface (including per-type add/update endpoints) is defined in
-`LubeLoggerApi.kt` and `LubeLoggerRepository.kt`, so the remaining add/edit forms are
-incremental UI work on top of the existing plumbing.
+### Vehicle dashboard
+
+Opening a vehicle shows a dashboard with a hero-image header (loaded through the
+authenticated image client, with a text fallback when no photo is set) and the record
+areas grouped into **Records** and **Planning & reference**. Each area tile displays a
+live record count and the most-recent activity date — the soonest due date for
+Reminders; count-only for Equipment and Notes, which have no date field. Summaries are
+fetched in parallel and fill in lazily, so the screen paints immediately.
+
+Vehicle and record lists support pull-to-refresh (which also clears the image cache), and
+screens reload automatically when connection settings change.
 
 ## Suggested next steps
 

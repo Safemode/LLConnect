@@ -95,6 +95,36 @@ internal fun EquipmentRecord.toRow(): RecordRow = RecordRow(
     meta = tags?.ifBlank { null },
 )
 
+// ---- Cross-vehicle activity mappers ----
+
+internal fun GenericRecord.toActivity(area: RecordArea, name: (Long?) -> String): ActivityItem =
+    ActivityItem(
+        area = area,
+        vehicleId = vehicleId,
+        vehicleName = name(vehicleId),
+        title = description?.ifBlank { "(no description)" } ?: "(no description)",
+        date = date,
+        cost = cost,
+    )
+
+internal fun GasRecord.toActivity(name: (Long?) -> String): ActivityItem = ActivityItem(
+    area = RecordArea.GAS,
+    vehicleId = vehicleId,
+    vehicleName = name(vehicleId),
+    title = fuelConsumed?.let { String.format("%,.2f units", it) } ?: "Fuel-up",
+    date = date,
+    cost = cost,
+)
+
+internal fun OdometerRecord.toActivity(name: (Long?) -> String): ActivityItem = ActivityItem(
+    area = RecordArea.ODOMETER,
+    vehicleId = vehicleId,
+    vehicleName = name(vehicleId),
+    title = odo(odometer) ?: "Odometer reading",
+    date = date,
+    cost = null,
+)
+
 // ---- Editable-form mappers (used when updating a record) ----
 
 internal fun GenericRecord.toEdit(): RecordEditData = RecordEditData(

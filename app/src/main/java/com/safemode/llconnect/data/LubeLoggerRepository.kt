@@ -21,7 +21,12 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.safemode.llconnect.data.remote.models.GasRecord
+import com.safemode.llconnect.data.remote.models.GenericRecord
+import com.safemode.llconnect.data.remote.models.OdometerRecord
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -91,14 +96,150 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     suspend fun deleteVehicle(id: String): Result<Unit> = callUnit { it.deleteVehicle(id) }
 
     // ---- System / user ----
-    suspend fun whoAmI(): Result<WhoAmI> = call { it.whoAmI() }
+    suspend fun whoAmI(): Result<WhoAmI> = call { it.whoAmI() }.map { parseWhoAmI(it.string()) }
+
+    /** Parses the whoami body tolerantly, matching keys regardless of camel/Pascal casing. */
+    private fun parseWhoAmI(raw: String): WhoAmI {
+        val obj = runCatching { JSONObject(raw.trim()) }.getOrNull() ?: return WhoAmI()
+        fun find(vararg names: String): String? {
+            for (key in obj.keys()) {
+                if (names.any { it.equals(key, ignoreCase = true) }) {
+                    val value = obj.optString(key)
+                    if (value.isNotBlank() && value != "null") return value
+                }
+            }
+            return null
+        }
+        fun findBool(vararg names: String): Boolean? {
+            for (key in obj.keys()) {
+                if (names.any { it.equals(key, ignoreCase = true) }) return obj.optBoolean(key)
+            }
+            return null
+        }
+        return WhoAmI(
+            id = find("id"),
+            userName = find("userName", "username"),
+            emailAddress = find("emailAddress", "email"),
+            isAdmin = findBool("isAdmin", "admin"),
+            isRootUser = findBool("isRootUser", "isRoot", "root"),
+        )
+    }
 
     suspend fun version(): Result<String> =
-        call { it.version() }.map { it.string().trim().trim('"') }
+        call { it.version() }.map { parseVersion(it.string()) }
+
+    /**
+     * The version endpoint may reply with a bare string or a JSON object
+     * (e.g. {"version":"1.7.3"}). Extract just the version number for display.
+     */
+    private fun parseVersion(raw: String): String {
+        val text = raw.trim()
+        if (text.isEmpty()) return "—"
+        if (text.startsWith("{")) {
+            runCatching { JSONObject(text) }.getOrNull()?.let { obj ->
+                // Prefer common keys, then fall back to any version-looking value.
+                for (key in listOf("version", "Version", "currentVersion", "current")) {
+                    obj.optString(key).takeIf { it.isNotBlank() }?.let { return it.trim() }
+                }
+                for (key in obj.keys()) {
+                    val value = obj.optString(key).trim()
+                    if (value.matches(Regex(".*\\d+\\.\\d+.*"))) return value
+                }
+            }
+        }
+        return text.trim('"')
+    }
 
     suspend fun serverInfo(): Result<String> = call { it.serverInfo() }.map { it.string() }
 
     suspend fun makeBackup(): Result<String> = call { it.makeBackup() }.map { it.string() }
+
+    // ---- Tools ----
+    suspend fun cleanup(deep: Boolean): Result<String> =
+        call { it.cleanup(if (deep) "true" else null) }.map { summarizeResult(it.string()) }
+
+    suspend fun tempFiles(): Result<String> = call { it.tempFiles() }.map { summarizeResult(it.string()) }
+
+    suspend fun sendReminders(): Result<String> =
+        call { it.sendReminders() }.map { summarizeResult(it.string()) }
+
+    private fun summarizeResult(raw: String): String {
+        val text = raw.trim()
+        return when {
+            text.isEmpty() -> "Done."
+            text.startsWith("[") -> {
+                val count = runCatching { JSONArray(text).length() }.getOrDefault(0)
+                if (count == 0) "No files." else "$count file${if (count == 1) "" else "s"}."
+            }
+            else -> text.trim('"').take(200)
+        }
+    }
+
+    // ---- Cross-vehicle aggregates ----
+
+    /** Maps vehicle id → display name for labeling cross-vehicle rows. */
+    private suspend fun vehicleNames(api: LubeLoggerApi): Map<Long?, String> =
+        api.getVehicles().unwrap().associate { it.id to it.displayName }
+
+    /** Recent activity across every vehicle, newest first. */
+    suspend fun getActivity(): Result<List<ActivityItem>> = runCatching {
+        coroutineScope {
+            val api = api()
+            val names = vehicleNames(api)
+            fun name(id: Long?) = names[id] ?: "Vehicle #${id ?: "?"}"
+
+            val service = async { api.getAllServiceRecords().unwrap().map { it.toActivity(RecordArea.SERVICE, ::name) } }
+            val repair = async { api.getAllRepairRecords().unwrap().map { it.toActivity(RecordArea.REPAIR, ::name) } }
+            val upgrade = async { api.getAllUpgradeRecords().unwrap().map { it.toActivity(RecordArea.UPGRADE, ::name) } }
+            val tax = async { api.getAllTaxRecords().unwrap().map { it.toActivity(RecordArea.TAX, ::name) } }
+            val gas = async { api.getAllGasRecords().unwrap().map { it.toActivity(::name) } }
+            val odo = async { api.getAllOdometerRecords().unwrap().map { it.toActivity(::name) } }
+
+            (service.await() + repair.await() + upgrade.await() + tax.await() + gas.await() + odo.await())
+                .sortedByDescending { parseDate(it.date)?.toEpochDay() ?: Long.MIN_VALUE }
+        }
+    }
+
+    /** Aggregated spend derived from the activity feed. */
+    suspend fun getCostReport(): Result<CostReport> = getActivity().map { items ->
+        val withCost = items.filter { (it.cost ?: 0.0) != 0.0 }
+        val byCategory = withCost.groupBy { it.area }
+            .map { (area, rows) -> CategoryTotal(area, rows.sumOf { it.cost ?: 0.0 }, rows.size) }
+            .sortedByDescending { it.total }
+        val byVehicle = withCost.groupBy { it.vehicleName }
+            .map { (nm, rows) -> VehicleTotal(nm, rows.sumOf { it.cost ?: 0.0 }, rows.size) }
+            .sortedByDescending { it.total }
+        CostReport(
+            totalCost = withCost.sumOf { it.cost ?: 0.0 },
+            recordCount = items.size,
+            byCategory = byCategory,
+            byVehicle = byVehicle,
+        )
+    }
+
+    /** All reminders across vehicles, soonest due first. */
+    suspend fun getAllReminders(): Result<List<ReminderItem>> = runCatching {
+        coroutineScope {
+            val api = api()
+            val names = vehicleNames(api)
+            api.getAllReminders().unwrap().map { r ->
+                ReminderItem(
+                    vehicleName = names[r.vehicleId] ?: "Vehicle #${r.vehicleId ?: "?"}",
+                    description = r.description?.ifBlank { "(reminder)" } ?: "(reminder)",
+                    dueDate = r.dueDate,
+                    dueOdometer = r.dueOdometer,
+                    urgency = r.urgency,
+                    metric = r.metric,
+                )
+            }.sortedBy { parseDate(it.dueDate)?.toEpochDay() ?: Long.MAX_VALUE }
+        }
+    }
+
+    private fun parseDate(raw: String?): LocalDate? {
+        val d = raw?.substringBefore('T')?.substringBefore(' ')?.trim().orEmpty()
+        if (d.isEmpty()) return null
+        return DateFormats.firstNotNullOfOrNull { runCatching { LocalDate.parse(d, it) }.getOrNull() }
+    }
 
     // ---- Records: read ----
     suspend fun getRecords(area: RecordArea, vehicleId: String): Result<List<RecordRow>> =

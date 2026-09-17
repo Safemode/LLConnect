@@ -20,7 +20,6 @@ import com.safemode.llconnect.data.remote.models.TaxRecordRequest
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.data.remote.models.VehicleAddRequest
 import com.safemode.llconnect.data.remote.models.VehicleUpdateRequest
-import com.safemode.llconnect.data.remote.models.WhoAmI
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -241,9 +240,43 @@ interface LubeLoggerApi {
     @DELETE("api/vehicle/notes/delete")
     suspend fun deleteNote(@Query("id") id: String): Response<ResponseBody>
 
+    // ---- Cross-vehicle ("all") reads ----
+    @GET("api/vehicle/servicerecords/all")
+    suspend fun getAllServiceRecords(): Response<List<GenericRecord>>
+
+    @GET("api/vehicle/repairrecords/all")
+    suspend fun getAllRepairRecords(): Response<List<GenericRecord>>
+
+    @GET("api/vehicle/upgraderecords/all")
+    suspend fun getAllUpgradeRecords(): Response<List<GenericRecord>>
+
+    @GET("api/vehicle/taxrecords/all")
+    suspend fun getAllTaxRecords(): Response<List<GenericRecord>>
+
+    @GET("api/vehicle/gasrecords/all")
+    suspend fun getAllGasRecords(): Response<List<GasRecord>>
+
+    @GET("api/vehicle/odometerrecords/all")
+    suspend fun getAllOdometerRecords(): Response<List<OdometerRecord>>
+
+    @GET("api/vehicle/reminders/all")
+    suspend fun getAllReminders(): Response<List<ReminderRecord>>
+
+    // ---- Tools ----
+    @GET("api/cleanup")
+    suspend fun cleanup(@Query("deepClean") deepClean: String? = null): Response<ResponseBody>
+
+    @GET("api/tempfiles")
+    suspend fun tempFiles(): Response<ResponseBody>
+
+    @GET("api/vehicle/reminders/send")
+    suspend fun sendReminders(): Response<ResponseBody>
+
     // ---- System / User ----
+    // Returned as a raw body and parsed case-insensitively in the repository, because
+    // the instance may serialize this object as camelCase or PascalCase.
     @GET("api/whoami")
-    suspend fun whoAmI(): Response<WhoAmI>
+    suspend fun whoAmI(): Response<ResponseBody>
 
     @GET("api/info")
     suspend fun serverInfo(): Response<ResponseBody>
