@@ -226,16 +226,6 @@ fun RecordFormScreen(
             if (showDate) {
                 DateField(label = "Date", value = date, onValueChange = { date = it })
             }
-            if (showOdometer) {
-                OutlinedTextField(
-                    value = odometer,
-                    onValueChange = { odometer = it.filter(Char::isDigit) },
-                    label = { Text("Odometer") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
             if (area == RecordArea.ODOMETER) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -243,7 +233,9 @@ fun RecordFormScreen(
                         onValueChange = { initialOdometer = it.filter(Char::isDigit) },
                         label = { Text("Initial odometer") },
                         singleLine = true,
-                        readOnly = initialOdometerLocked,
+                        // Disabled (grayed) while locked, so it's clearly read-only; the edit
+                        // toggle beside it unlocks editing.
+                        enabled = !initialOdometerLocked,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         supportingText = {
                             Text(
@@ -260,6 +252,16 @@ fun RecordFormScreen(
                         )
                     }
                 }
+            }
+            if (showOdometer) {
+                OutlinedTextField(
+                    value = odometer,
+                    onValueChange = { odometer = it.filter(Char::isDigit) },
+                    label = { Text("Odometer") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             if (showDescription) {
                 OutlinedTextField(
