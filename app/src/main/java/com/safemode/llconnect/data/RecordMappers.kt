@@ -3,6 +3,7 @@ package com.safemode.llconnect.data
 import com.safemode.llconnect.data.remote.models.EquipmentRecord
 import com.safemode.llconnect.data.remote.models.EquipmentRecordRequest
 import com.safemode.llconnect.data.remote.models.FileAttachment
+import com.safemode.llconnect.data.remote.models.FileAttachmentResponse
 import com.safemode.llconnect.data.remote.models.GasRecord
 import com.safemode.llconnect.data.remote.models.GasRecordRequest
 import com.safemode.llconnect.data.remote.models.GenericRecord
@@ -18,6 +19,10 @@ import com.safemode.llconnect.data.remote.models.SupplyRecord
 import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
 import com.safemode.llconnect.data.remote.models.TaxRecordRequest
 
+/** Response file list → request file list (drops the read-only isPending flag). */
+private fun List<FileAttachmentResponse>?.toAttachments(): List<FileAttachment> =
+    this.orEmpty().map { FileAttachment(name = it.name, location = it.location) }
+
 private fun money(value: Double?): String? =
     value?.let { "$" + String.format("%,.2f", it) }
 
@@ -31,6 +36,7 @@ internal fun GenericRecord.toRow(isTax: Boolean = false): RecordRow = RecordRow(
     trailing = money(cost),
     meta = listOfNotNull(date, if (!isTax) odo(odometer) else null).joinToString(" · ")
         .ifBlank { null },
+    hasAttachments = !files.isNullOrEmpty(),
 )
 
 internal fun GasRecord.toRow(): RecordRow = RecordRow(
@@ -43,6 +49,7 @@ internal fun GasRecord.toRow(): RecordRow = RecordRow(
         ?: fuelEconomy?.let { String.format("%.1f economy", it) },
     trailing = money(cost),
     meta = listOfNotNull(date, odo(odometer)).joinToString(" · ").ifBlank { null },
+    hasAttachments = !files.isNullOrEmpty(),
 )
 
 internal fun OdometerRecord.toRow(): RecordRow = RecordRow(
@@ -51,6 +58,7 @@ internal fun OdometerRecord.toRow(): RecordRow = RecordRow(
     subtitle = notes?.ifBlank { null },
     trailing = null,
     meta = date,
+    hasAttachments = !files.isNullOrEmpty(),
 )
 
 internal fun PlanRecord.toRow(): RecordRow = RecordRow(
@@ -60,6 +68,7 @@ internal fun PlanRecord.toRow(): RecordRow = RecordRow(
         .joinToString(" · ").ifBlank { null },
     trailing = money(cost),
     meta = dateModified ?: dateCreated,
+    hasAttachments = !files.isNullOrEmpty(),
 )
 
 internal fun SupplyRecord.toRow(): RecordRow = RecordRow(
@@ -71,6 +80,7 @@ internal fun SupplyRecord.toRow(): RecordRow = RecordRow(
     ).joinToString(" · ").ifBlank { null },
     trailing = money(cost),
     meta = date,
+    hasAttachments = !files.isNullOrEmpty(),
 )
 
 internal fun ReminderRecord.toRow(): RecordRow = RecordRow(
@@ -93,6 +103,7 @@ internal fun EquipmentRecord.toRow(): RecordRow = RecordRow(
     subtitle = notes?.ifBlank { null },
     trailing = if (isEquipped == true) "Equipped" else "Removed",
     meta = tags?.ifBlank { null },
+    hasAttachments = !files.isNullOrEmpty(),
 )
 
 // ---- Cross-vehicle activity mappers ----
@@ -135,6 +146,8 @@ internal fun GenericRecord.toEdit(): RecordEditData = RecordEditData(
     cost = cost,
     notes = notes,
     tags = tags,
+    files = files.toAttachments(),
+    extraFields = extraFields,
 )
 
 internal fun GasRecord.toEdit(): RecordEditData = RecordEditData(
@@ -147,6 +160,8 @@ internal fun GasRecord.toEdit(): RecordEditData = RecordEditData(
     missedFuelUp = missedFuelUp,
     notes = notes,
     tags = tags,
+    files = files.toAttachments(),
+    extraFields = extraFields,
 )
 
 internal fun OdometerRecord.toEdit(): RecordEditData = RecordEditData(
@@ -156,6 +171,8 @@ internal fun OdometerRecord.toEdit(): RecordEditData = RecordEditData(
     initialOdometer = initialOdometer,
     notes = notes,
     tags = tags,
+    files = files.toAttachments(),
+    extraFields = extraFields,
 )
 
 internal fun PlanRecord.toEdit(): RecordEditData = RecordEditData(
@@ -166,6 +183,8 @@ internal fun PlanRecord.toEdit(): RecordEditData = RecordEditData(
     priority = priority,
     progress = progress,
     notes = notes,
+    files = files.toAttachments(),
+    extraFields = extraFields,
 )
 
 internal fun SupplyRecord.toEdit(): RecordEditData = RecordEditData(
@@ -178,6 +197,8 @@ internal fun SupplyRecord.toEdit(): RecordEditData = RecordEditData(
     cost = cost,
     notes = notes,
     tags = tags,
+    files = files.toAttachments(),
+    extraFields = extraFields,
 )
 
 internal fun ReminderRecord.toEdit(): RecordEditData = RecordEditData(
@@ -196,6 +217,8 @@ internal fun EquipmentRecord.toEdit(): RecordEditData = RecordEditData(
     isEquipped = isEquipped,
     notes = notes,
     tags = tags,
+    files = files.toAttachments(),
+    extraFields = extraFields,
 )
 
 internal fun Note.toEdit(): RecordEditData = RecordEditData(
@@ -204,6 +227,8 @@ internal fun Note.toEdit(): RecordEditData = RecordEditData(
     noteText = noteText,
     pinned = pinned,
     tags = tags,
+    files = files.toAttachments(),
+    extraFields = extraFields,
 )
 
 // ---- Response → update-request mappers, preserving all fields while replacing `files`.
@@ -265,4 +290,5 @@ internal fun Note.toRow(): RecordRow = RecordRow(
     subtitle = noteText?.ifBlank { null },
     trailing = if (pinned == true) "📌" else null,
     meta = tags?.ifBlank { null },
+    hasAttachments = !files.isNullOrEmpty(),
 )

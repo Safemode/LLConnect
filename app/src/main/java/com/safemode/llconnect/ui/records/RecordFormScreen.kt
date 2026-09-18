@@ -13,13 +13,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -39,6 +43,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.RecordArea
+import com.safemode.llconnect.data.remote.models.ExtraField
+import com.safemode.llconnect.data.remote.models.FileAttachment
 import com.safemode.llconnect.data.remote.models.EquipmentRecordRequest
 import com.safemode.llconnect.data.remote.models.GasRecordRequest
 import com.safemode.llconnect.data.remote.models.GenericRecordRequest
@@ -82,6 +88,8 @@ private data class FormValues(
     val isEquipped: Boolean,
     val noteText: String?,
     val pinned: Boolean,
+    val files: List<FileAttachment>,
+    val extraFields: List<ExtraField>?,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,6 +99,7 @@ fun RecordFormScreen(
     areaName: String,
     recordId: String,
     onBack: () -> Unit,
+    onAttachments: (String) -> Unit,
 ) {
     val area = remember(areaName) { recordAreaFromName(areaName) }
     val isEdit = recordId.isNotBlank()
@@ -127,10 +136,15 @@ fun RecordFormScreen(
     // Notes
     var noteText by remember { mutableStateOf("") }
     var pinned by remember { mutableStateOf(false) }
+    // Not user-editable here, but preserved so an update doesn't wipe them server-side.
+    var attachments by remember { mutableStateOf<List<FileAttachment>>(emptyList()) }
+    var extraFields by remember { mutableStateOf<List<ExtraField>?>(null) }
 
     var loading by remember { mutableStateOf(isEdit) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
 
     // In edit mode, fetch the existing record and pre-fill the fields.
     LaunchedEffect(recordId) {
@@ -161,6 +175,8 @@ fun RecordFormScreen(
                     isEquipped = data.isEquipped ?: true
                     noteText = data.noteText.orEmpty()
                     pinned = data.pinned ?: false
+                    attachments = data.files
+                    extraFields = data.extraFields
                 } else {
                     error = "Could not load this record for editing."
                 }
@@ -205,6 +221,23 @@ fun RecordFormScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Attachment management and delete live here, on the record's own screen.
+                    if (isEdit && area.supportsAttachments) {
+                        IconButton(onClick = { onAttachments(recordId) }) {
+                            Icon(Icons.Filled.AttachFile, contentDescription = "Attachments")
+                        }
+                    }
+                    if (isEdit) {
+                        IconButton(enabled = !deleting, onClick = { confirmDelete = true }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 },
             )
@@ -419,6 +452,8 @@ fun RecordFormScreen(
                                 isEquipped = isEquipped,
                                 noteText = noteText.ifBlank { null },
                                 pinned = pinned,
+                                files = attachments,
+                                extraFields = extraFields,
                             ),
                         )
                         submitting = false
@@ -442,6 +477,35 @@ fun RecordFormScreen(
                 Text(if (isEdit) "Update record" else "Save record")
             }
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { if (!deleting) confirmDelete = false },
+            title = { Text("Delete record?") },
+            text = { Text("This permanently deletes this record on the server. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !deleting,
+                    onClick = {
+                        confirmDelete = false
+                        deleting = true
+                        scope.launch {
+                            Graph.repository.deleteRecord(area, recordId).fold(
+                                onSuccess = { onBack() },
+                                onFailure = {
+                                    error = it.message ?: "Delete failed."
+                                    deleting = false
+                                },
+                            )
+                        }
+                    },
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -475,6 +539,8 @@ private suspend fun submit(
                 cost = values.cost,
                 notes = values.notes,
                 tags = values.tags,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updateServiceLike(area, body) else repo.addServiceLike(area, vehicleId, body)
         }
@@ -486,6 +552,8 @@ private suspend fun submit(
                 cost = values.cost,
                 notes = values.notes,
                 tags = values.tags,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updateTax(body) else repo.addTax(vehicleId, body)
         }
@@ -500,6 +568,8 @@ private suspend fun submit(
                 missedFuelUp = values.missedFuelUp,
                 notes = values.notes,
                 tags = values.tags,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updateGas(body) else repo.addGas(vehicleId, body)
         }
@@ -514,6 +584,8 @@ private suspend fun submit(
                 odometer = values.odometer,
                 notes = values.notes,
                 tags = values.tags,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updateOdometer(body) else repo.addOdometer(vehicleId, body)
         }
@@ -526,6 +598,8 @@ private suspend fun submit(
                 priority = values.priority,
                 progress = values.progress,
                 notes = values.notes,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updatePlan(body) else repo.addPlan(vehicleId, body)
         }
@@ -540,6 +614,8 @@ private suspend fun submit(
                 cost = values.cost,
                 notes = values.notes,
                 tags = values.tags,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updateSupply(body) else repo.addSupply(vehicleId, body)
         }
@@ -562,6 +638,8 @@ private suspend fun submit(
                 isEquipped = values.isEquipped,
                 notes = values.notes,
                 tags = values.tags,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updateEquipment(body) else repo.addEquipment(vehicleId, body)
         }
@@ -572,6 +650,8 @@ private suspend fun submit(
                 noteText = values.noteText,
                 pinned = values.pinned,
                 tags = values.tags,
+                files = values.files.ifEmpty { null },
+                extraFields = values.extraFields,
             )
             if (isEdit) repo.updateNote(body) else repo.addNote(vehicleId, body)
         }

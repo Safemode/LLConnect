@@ -20,9 +20,6 @@ class RecordsViewModel(
     private val _state = MutableStateFlow<UiState<List<RecordRow>>>(UiState.Loading)
     val state: StateFlow<UiState<List<RecordRow>>> = _state.asStateFlow()
 
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
-
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
@@ -59,22 +56,5 @@ class RecordsViewModel(
                 else UiState.Error(failure.message ?: "Failed to load records.")
             },
         )
-    }
-
-    fun delete(id: String) {
-        if (id.isBlank()) return
-        viewModelScope.launch {
-            repository.deleteRecord(area, id).fold(
-                onSuccess = {
-                    _message.value = "Deleted."
-                    load()
-                },
-                onFailure = { _message.value = it.message ?: "Delete failed." },
-            )
-        }
-    }
-
-    fun consumeMessage() {
-        _message.value = null
     }
 }
