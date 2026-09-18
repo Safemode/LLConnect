@@ -89,10 +89,13 @@ class ApiProvider {
     private fun buildClient(): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
+            redactHeader("x-api-key")
+            redactHeader("Authorization")
         }
         return OkHttpClient.Builder()
             .addInterceptor(AuthInterceptor { config })
             .addInterceptor(logging)
+            .retryOnConnectionFailure(true)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
