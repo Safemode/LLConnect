@@ -9,6 +9,12 @@ enum class FuelEconomyUnit(val label: String) {
     UK_MPG("UK MPG"),
 }
 
+/** Order for chronological record lists (odometer, service, gas, …). */
+enum class RecordSortOrder(val label: String) {
+    OLDEST_FIRST("Oldest first"),
+    NEWEST_FIRST("Newest first"),
+}
+
 /** User-supplied connection details for a self-hosted LubeLogger instance. */
 data class ConnectionConfig(
     val scheme: String = "http",
@@ -20,6 +26,7 @@ data class ConnectionConfig(
     val basicPassword: String = "",
     val cultureInvariant: Boolean = true,
     val fuelEconomyUnit: FuelEconomyUnit = FuelEconomyUnit.DEFAULT,
+    val recordSortOrder: RecordSortOrder = RecordSortOrder.OLDEST_FIRST,
 ) {
     /** True once there is enough to attempt a connection. */
     val isConfigured: Boolean

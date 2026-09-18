@@ -10,9 +10,7 @@ import com.safemode.llconnect.ui.common.UiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 data class ServerInfo(
@@ -26,23 +24,27 @@ class ServerViewModel : ViewModel() {
     private val repository = Graph.repository
     private val settings = Graph.settingsRepository
 
+    /** Editable connection form. Persisted only when the user taps Save & test. */
+    private val _form = MutableStateFlow(ConnectionConfig())
+    val form: StateFlow<ConnectionConfig> = _form.asStateFlow()
+
     private val _state = MutableStateFlow<UiState<ServerInfo>>(UiState.Loading)
     val state: StateFlow<UiState<ServerInfo>> = _state.asStateFlow()
-
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     init {
-        // React to connection changes (e.g. after saving Settings) by reloading automatically.
         viewModelScope.launch {
-            settings.config
-                .map { ConnectionKey.from(it) to it }
-                .distinctUntilChanged { old, new -> old.first == new.first }
-                .collect { (_, config) -> reload(config, showLoading = true) }
+            val config = settings.config.first()
+            _form.value = config
+            reload(config, showLoading = true)
         }
+    }
+
+    /** Edits the connection form in memory; persisted on [saveAndTest]. */
+    fun update(transform: (ConnectionConfig) -> ConnectionConfig) {
+        _form.value = transform(_form.value)
     }
 
     /** Manual retry using the latest saved config. */
@@ -50,12 +52,36 @@ class ServerViewModel : ViewModel() {
         viewModelScope.launch { reload(settings.config.first(), showLoading = true) }
     }
 
-    /** Pull-to-refresh. */
+    /** Pull-to-refresh: re-query the currently saved connection. */
     fun refresh() {
         viewModelScope.launch {
             _refreshing.value = true
             reload(settings.config.first(), showLoading = false)
             _refreshing.value = false
+        }
+    }
+
+    /**
+     * Persists the connection fields (merged onto the latest saved config so unrelated
+     * preferences aren't clobbered), pushes them to the API provider, and re-queries the server.
+     */
+    fun saveAndTest() {
+        viewModelScope.launch {
+            val form = _form.value
+            val merged = settings.config.first().copy(
+                scheme = form.scheme,
+                host = form.host,
+                port = form.port,
+                authMode = form.authMode,
+                apiKey = form.apiKey,
+                basicUsername = form.basicUsername,
+                basicPassword = form.basicPassword,
+                cultureInvariant = form.cultureInvariant,
+            )
+            settings.save(merged)
+            Graph.apiProvider.updateConfig(merged)
+            _form.value = merged
+            reload(merged, showLoading = true)
         }
     }
 
@@ -79,38 +105,5 @@ class ServerViewModel : ViewModel() {
                 usingApiKey = config.authMode == AuthMode.API_KEY,
             ),
         )
-    }
-
-    /** Fields that, when changed, should trigger a reload. */
-    private data class ConnectionKey(
-        val scheme: String,
-        val host: String,
-        val port: String,
-        val apiKey: String,
-        val authMode: String,
-        val basicUsername: String,
-        val basicPassword: String,
-        val cultureInvariant: Boolean,
-    ) {
-        companion object {
-            fun from(c: ConnectionConfig) = ConnectionKey(
-                c.scheme, c.host, c.port, c.apiKey, c.authMode.name,
-                c.basicUsername, c.basicPassword, c.cultureInvariant,
-            )
-        }
-    }
-
-    fun makeBackup() {
-        viewModelScope.launch {
-            _message.value = "Requesting backup…"
-            repository.makeBackup().fold(
-                onSuccess = { _message.value = "Backup created on the server." },
-                onFailure = { _message.value = it.message ?: "Backup failed." },
-            )
-        }
-    }
-
-    fun consumeMessage() {
-        _message.value = null
     }
 }

@@ -8,6 +8,8 @@ data class RecordEditData(
     val id: Long,
     val date: String? = null,
     val odometer: Long? = null,
+    // Odometer records carry a separate initial reading; the update endpoint requires it.
+    val initialOdometer: Long? = null,
     val description: String? = null,
     val cost: Double? = null,
     val fuelConsumed: Double? = null,

@@ -66,7 +66,7 @@ fun HistoryScreen(
             ) {
                 when (val s = state) {
                 UiState.Loading -> LoadingState()
-                UiState.NotConfigured -> ErrorState(message = "Add your server details in Settings first.")
+                UiState.NotConfigured -> ErrorState(message = "Add your server details under Server first.")
                 is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
                 is UiState.Success -> if (s.data.isEmpty()) {
                     EmptyState(

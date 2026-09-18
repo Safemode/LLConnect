@@ -6,11 +6,15 @@ instance. API calls are modeled on the LubeLogger v1.7.3 OpenAPI schema.
 ## Getting started
 
 1. Build & install the app (Android Studio, or `./gradlew installDebug`).
-2. Open **Settings** from the navigation drawer and enter:
+2. Open **Server** from the navigation drawer and enter:
    - **Scheme** (HTTP/HTTPS), **Host / IP**, and optional **Port**
    - **API key** (sent as `x-api-key`) — generate one in LubeLogger under
      *Settings → API Access* — or switch to **Username / password** (HTTP Basic).
-3. Tap **Save & test** to verify the connection against `/api/whoami`.
+3. Tap **Save & test connection** to persist the details and verify them against `/api/whoami`;
+   the signed-in identity and server version appear below.
+
+App preferences (fuel-economy units, record-list order) live separately under **Settings**
+and save the moment you change them.
 
 Self-hosted instances are often reached over plain HTTP on a LAN address, so cleartext
 traffic is enabled in the manifest.
@@ -61,14 +65,19 @@ Reminders; count-only for Equipment and Notes, which have no date field. Summari
 fetched in parallel and fill in lazily, so the screen paints immediately.
 
 Vehicle and record lists support pull-to-refresh (which also clears the image cache), and
-screens reload automatically when connection settings change.
+screens reload automatically when you return to them — e.g. after adding, editing, or
+deleting a record, or changing the connection. Dated record lists (odometer, service, gas,
+…) are ordered by date in the direction chosen in **Settings → Record list order**
+(oldest-first by default); undated rows fall to the bottom.
 
 ### Navigation drawer
 
 The drawer holds the primary destinations (Dashboard, Vehicles, and the garage-wide views
-below) at the top, with Tools, Server, About, and Settings pinned to the bottom. Swipe from
-the left edge to open it; on the dashboard, a second back press within two seconds exits the
-app (a first press closes the drawer if it's open).
+below) at the top, with Tools, Server, About, and Settings pinned to the bottom. **Server**
+holds the connection, authentication, and culture-invariant settings plus the live
+signed-in/version info; **Settings** holds app preferences (fuel-economy units, record-list
+order). Swipe from the left edge to open the drawer; on the dashboard, a second back press
+within two seconds exits the app (a first press closes the drawer if it's open).
 
 ### Garage-wide views
 
@@ -92,7 +101,6 @@ The server also reports the signed-in identity: under API-key auth LubeLogger re
 
 ## Suggested next steps
 
-- Date-range and tag filters on History/Reports (the `startDate`, `endDate`, `tags` params).
-- Fuel-economy unit selection (the `useMPG` / `useUKMPG` params on the gas endpoints).
+- Tag filters on History/Reports (the `tags` param; date-range filters are already in).
 - Extra-field editing across records and vehicles.
 - Optional biometric gate (`setUserAuthenticationRequired`) on the Keystore secret key.

@@ -13,6 +13,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,6 +62,7 @@ private val ReminderMetrics = listOf("Both", "Odometer", "Date")
 private data class FormValues(
     val date: String,
     val odometer: Long?,
+    val initialOdometer: Long?,
     val description: String?,
     val cost: Double?,
     val fuelConsumed: Double?,
@@ -95,6 +98,11 @@ fun RecordFormScreen(
 
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var odometer by remember { mutableStateOf("") }
+    // Odometer records: the reading the entry counts up from. Prefilled (carried from the
+    // previous entry when adding, or the record's own value when editing) and read-only until
+    // the user taps the edit toggle beside it.
+    var initialOdometer by remember { mutableStateOf("") }
+    var initialOdometerLocked by remember { mutableStateOf(true) }
     var description by remember { mutableStateOf("") }
     var cost by remember { mutableStateOf("") }
     var fuelConsumed by remember { mutableStateOf("") }
@@ -133,6 +141,7 @@ fun RecordFormScreen(
                 if (data != null) {
                     date = data.date?.ifBlank { date } ?: date
                     odometer = data.odometer?.toString() ?: ""
+                    initialOdometer = data.initialOdometer?.toString() ?: ""
                     description = data.description.orEmpty()
                     cost = data.cost?.toString() ?: ""
                     fuelConsumed = data.fuelConsumed?.toString() ?: ""
@@ -162,6 +171,14 @@ fun RecordFormScreen(
                 loading = false
             },
         )
+    }
+
+    // New odometer record: carry the previous entry's reading over as the initial odometer.
+    LaunchedEffect(area, isEdit) {
+        if (isEdit || area != RecordArea.ODOMETER) return@LaunchedEffect
+        Graph.repository.latestOdometer(vehicleId).onSuccess { last ->
+            if (last != null && initialOdometer.isBlank()) initialOdometer = last.toString()
+        }
     }
 
     val showDate = area in setOf(
@@ -208,6 +225,33 @@ fun RecordFormScreen(
         ) {
             if (showDate) {
                 DateField(label = "Date", value = date, onValueChange = { date = it })
+            }
+            if (area == RecordArea.ODOMETER) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = initialOdometer,
+                        onValueChange = { initialOdometer = it.filter(Char::isDigit) },
+                        label = { Text("Initial odometer") },
+                        singleLine = true,
+                        // Disabled (grayed) while locked, so it's clearly read-only; the edit
+                        // toggle beside it unlocks editing.
+                        enabled = !initialOdometerLocked,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        supportingText = {
+                            Text(
+                                if (initialOdometerLocked) "Carried from the previous entry — tap edit to change"
+                                else "Editing",
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { initialOdometerLocked = !initialOdometerLocked }) {
+                        Icon(
+                            imageVector = if (initialOdometerLocked) Icons.Filled.Edit else Icons.Filled.Check,
+                            contentDescription = if (initialOdometerLocked) "Edit initial odometer" else "Done editing",
+                        )
+                    }
+                }
             }
             if (showOdometer) {
                 OutlinedTextField(
@@ -353,6 +397,7 @@ fun RecordFormScreen(
                             values = FormValues(
                                 date = date,
                                 odometer = odometer.toLongOrNull(),
+                                initialOdometer = initialOdometer.toLongOrNull(),
                                 description = description.ifBlank { null },
                                 cost = cost.toDoubleOrNull(),
                                 fuelConsumed = fuelConsumed.toDoubleOrNull(),
@@ -462,6 +507,10 @@ private suspend fun submit(
             val body = OdometerRecordRequest(
                 id = id,
                 date = values.date,
+                // The update endpoint rejects an empty initial odometer; echo the loaded
+                // value back (defaulting to 0 if absent). On add, leave it null so the
+                // server derives it as before.
+                initialOdometer = if (isEdit) (values.initialOdometer ?: 0L) else values.initialOdometer,
                 odometer = values.odometer,
                 notes = values.notes,
                 tags = values.tags,

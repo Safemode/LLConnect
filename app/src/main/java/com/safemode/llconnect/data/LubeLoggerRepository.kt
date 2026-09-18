@@ -26,6 +26,7 @@ import com.safemode.llconnect.data.remote.models.GasRecord
 import com.safemode.llconnect.data.remote.models.GenericRecord
 import com.safemode.llconnect.data.remote.models.OdometerRecord
 import com.safemode.llconnect.data.settings.FuelEconomyUnit
+import com.safemode.llconnect.data.settings.RecordSortOrder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -258,26 +259,57 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         return DateFormats.firstNotNullOfOrNull { runCatching { LocalDate.parse(d, it) }.getOrNull() }
     }
 
+    /**
+     * Sorts by the given date field, in the direction chosen in settings (default oldest-first).
+     * LubeLogger returns records in insertion order, so a back-dated entry would otherwise land
+     * at the bottom; this keeps the list ordered by date. Stable, so same-date records keep their
+     * server order; undated/unparseable ones always sort to the end regardless of direction.
+     */
+    private fun <T> List<T>.byDate(date: (T) -> String?): List<T> {
+        val newestFirst =
+            apiProvider.currentConfig().recordSortOrder == RecordSortOrder.NEWEST_FIRST
+        val keyed = map { it to parseDate(date(it))?.toEpochDay() }
+        return keyed
+            .sortedWith(compareBy(nullsLast()) { (_, day) ->
+                when {
+                    day == null -> null            // undated → end
+                    newestFirst -> -day            // larger (newer) first
+                    else -> day                    // smaller (older) first
+                }
+            })
+            .map { it.first }
+    }
+
     // ---- Records: read ----
     suspend fun getRecords(area: RecordArea, vehicleId: String): Result<List<RecordRow>> =
         runCatching {
             val api = api()
             when (area) {
-                RecordArea.SERVICE -> api.getServiceRecords(vehicleId).unwrap().map { it.toRow() }
-                RecordArea.REPAIR -> api.getRepairRecords(vehicleId).unwrap().map { it.toRow() }
-                RecordArea.UPGRADE -> api.getUpgradeRecords(vehicleId).unwrap().map { it.toRow() }
-                RecordArea.TAX -> api.getTaxRecords(vehicleId).unwrap().map { it.toRow(isTax = true) }
+                RecordArea.SERVICE -> api.getServiceRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
+                RecordArea.REPAIR -> api.getRepairRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
+                RecordArea.UPGRADE -> api.getUpgradeRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
+                RecordArea.TAX -> api.getTaxRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow(isTax = true) }
                 RecordArea.GAS -> {
                     val (useMpg, useUkMpg) = mpgParams()
-                    api.getGasRecords(vehicleId, useMpg, useUkMpg).unwrap().map { it.toRow() }
+                    api.getGasRecords(vehicleId, useMpg, useUkMpg).unwrap().byDate { it.date }.map { it.toRow() }
                 }
-                RecordArea.ODOMETER -> api.getOdometerRecords(vehicleId).unwrap().map { it.toRow() }
-                RecordArea.PLAN -> api.getPlanRecords(vehicleId).unwrap().map { it.toRow() }
-                RecordArea.SUPPLY -> api.getSupplyRecords(vehicleId).unwrap().map { it.toRow() }
+                RecordArea.ODOMETER -> api.getOdometerRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
+                RecordArea.PLAN -> api.getPlanRecords(vehicleId).unwrap()
+                    .byDate { it.dateModified ?: it.dateCreated }.map { it.toRow() }
+                RecordArea.SUPPLY -> api.getSupplyRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
                 RecordArea.REMINDER -> api.getReminders(vehicleId).unwrap().map { it.toRow() }
                 RecordArea.EQUIPMENT -> api.getEquipmentRecords(vehicleId).unwrap().map { it.toRow() }
                 RecordArea.NOTE -> api.getNotes(vehicleId).unwrap().map { it.toRow() }
             }
+        }
+
+    /**
+     * Highest existing odometer reading for a vehicle, used to prefill the "initial odometer"
+     * on a new odometer record (LubeLogger's web UI carries the previous entry over the same way).
+     */
+    suspend fun latestOdometer(vehicleId: String): Result<Long?> =
+        runCatching {
+            api().getOdometerRecords(vehicleId).unwrap().mapNotNull { it.odometer }.maxOrNull()
         }
 
     /** Count + most-recent (or soonest-due, for reminders) date for a single area. */

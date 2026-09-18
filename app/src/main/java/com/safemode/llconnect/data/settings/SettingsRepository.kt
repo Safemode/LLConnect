@@ -29,6 +29,7 @@ class SettingsRepository(private val context: Context) {
         val BASIC_PASS = stringPreferencesKey("basic_pass")
         val CULTURE_INVARIANT = booleanPreferencesKey("culture_invariant")
         val FUEL_UNIT = stringPreferencesKey("fuel_unit")
+        val SORT_ORDER = stringPreferencesKey("record_sort_order")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -45,6 +46,9 @@ class SettingsRepository(private val context: Context) {
             fuelEconomyUnit = runCatching {
                 FuelEconomyUnit.valueOf(prefs[Keys.FUEL_UNIT] ?: "DEFAULT")
             }.getOrDefault(FuelEconomyUnit.DEFAULT),
+            recordSortOrder = runCatching {
+                RecordSortOrder.valueOf(prefs[Keys.SORT_ORDER] ?: "OLDEST_FIRST")
+            }.getOrDefault(RecordSortOrder.OLDEST_FIRST),
         )
     }
 
@@ -59,6 +63,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BASIC_PASS] = KeystoreCrypto.encrypt(config.basicPassword)
             prefs[Keys.CULTURE_INVARIANT] = config.cultureInvariant
             prefs[Keys.FUEL_UNIT] = config.fuelEconomyUnit.name
+            prefs[Keys.SORT_ORDER] = config.recordSortOrder.name
         }
     }
 }

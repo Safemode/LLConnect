@@ -98,7 +98,7 @@ fun VehiclesScreen(
                 UiState.NotConfigured -> EmptyState(
                     icon = Icons.Filled.DirectionsCar,
                     title = "Not connected yet",
-                    message = "Open the menu and go to Settings to add your LubeLogger server address and API key.",
+                    message = "Open the menu and go to Server to add your LubeLogger server address and API key.",
                 )
                 is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
                 is UiState.Success -> if (s.data.isEmpty()) {

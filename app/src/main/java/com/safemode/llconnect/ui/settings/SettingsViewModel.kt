@@ -10,68 +10,36 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-sealed interface TestResult {
-    data object Idle : TestResult
-    data object Testing : TestResult
-    data class Success(val message: String) : TestResult
-    data class Failure(val message: String) : TestResult
-}
-
+/**
+ * Backs the Settings screen, which now holds only standalone app preferences (fuel economy
+ * units, record list order). Each change is persisted immediately. Server connection and
+ * authentication live on the Server screen instead.
+ */
 class SettingsViewModel : ViewModel() {
     private val settings = Graph.settingsRepository
-    private val repository = Graph.repository
 
     private val _config = MutableStateFlow(ConnectionConfig())
     val config: StateFlow<ConnectionConfig> = _config.asStateFlow()
 
-    private val _loaded = MutableStateFlow(false)
-    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
-
-    private val _testResult = MutableStateFlow<TestResult>(TestResult.Idle)
-    val testResult: StateFlow<TestResult> = _testResult.asStateFlow()
-
-    private val _saved = MutableStateFlow(false)
-    val saved: StateFlow<Boolean> = _saved.asStateFlow()
-
     init {
-        viewModelScope.launch {
-            _config.value = settings.config.first()
-            _loaded.value = true
-        }
+        viewModelScope.launch { _config.value = settings.config.first() }
     }
 
-    fun update(transform: (ConnectionConfig) -> ConnectionConfig) {
-        _config.value = transform(_config.value)
-        _saved.value = false
-        _testResult.value = TestResult.Idle
-    }
-
-    fun save(onDone: (() -> Unit)? = null) {
+    /**
+     * Applies a preference change and persists it right away. Only the preference fields are
+     * written (merged onto the latest saved config) so connection settings edited elsewhere
+     * are never clobbered.
+     */
+    fun updateAndSave(transform: (ConnectionConfig) -> ConnectionConfig) {
+        val updated = transform(_config.value)
+        _config.value = updated
         viewModelScope.launch {
-            settings.save(_config.value)
-            _saved.value = true
-            onDone?.invoke()
-        }
-    }
-
-    /** Persists current settings, then verifies them against /api/whoami. */
-    fun saveAndTest() {
-        viewModelScope.launch {
-            settings.save(_config.value)
-            // Ensure the provider sees the newest config immediately.
-            Graph.apiProvider.updateConfig(_config.value)
-            _saved.value = true
-            _testResult.value = TestResult.Testing
-            val who = repository.whoAmI()
-            _testResult.value = who.fold(
-                onSuccess = { user ->
-                    val name = user.userName ?: user.emailAddress ?: "user"
-                    TestResult.Success("Connected as $name.")
-                },
-                onFailure = { e ->
-                    TestResult.Failure(e.message ?: "Connection failed.")
-                },
+            val merged = settings.config.first().copy(
+                fuelEconomyUnit = updated.fuelEconomyUnit,
+                recordSortOrder = updated.recordSortOrder,
             )
+            settings.save(merged)
+            Graph.apiProvider.updateConfig(merged)
         }
     }
 }

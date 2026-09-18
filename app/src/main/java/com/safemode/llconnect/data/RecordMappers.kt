@@ -153,6 +153,7 @@ internal fun OdometerRecord.toEdit(): RecordEditData = RecordEditData(
     id = id ?: 0L,
     date = date,
     odometer = odometer,
+    initialOdometer = initialOdometer,
     notes = notes,
     tags = tags,
 )
