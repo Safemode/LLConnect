@@ -34,4 +34,6 @@ data class RecordRow(
     val subtitle: String?,
     val trailing: String?,
     val meta: String?,
+    /** True when the record has at least one file attachment (drives the list indicator). */
+    val hasAttachments: Boolean = false,
 )

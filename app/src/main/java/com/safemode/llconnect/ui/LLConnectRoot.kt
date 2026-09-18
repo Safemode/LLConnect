@@ -197,11 +197,8 @@ fun LLConnectRoot() {
                     areaName = area,
                     onBack = { navController.popBackStack() },
                     onAdd = { navController.navigate(Routes.recordForm(vehicleId, area)) },
-                    onEdit = { recordId ->
+                    onOpen = { recordId ->
                         navController.navigate(Routes.recordForm(vehicleId, area, recordId))
-                    },
-                    onAttachments = { recordId ->
-                        navController.navigate(Routes.attachments(vehicleId, area, recordId))
                     },
                 )
             }
@@ -224,6 +221,9 @@ fun LLConnectRoot() {
                     areaName = area,
                     recordId = recordId,
                     onBack = { navController.popBackStack() },
+                    onAttachments = { rid ->
+                        navController.navigate(Routes.attachments(vehicleId, area, rid))
+                    },
                 )
             }
             composable(
