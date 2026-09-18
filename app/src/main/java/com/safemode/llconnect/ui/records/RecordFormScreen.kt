@@ -358,8 +358,10 @@ fun RecordFormScreen(
                                 fuelConsumed = fuelConsumed.toDoubleOrNull(),
                                 isFillToFull = isFillToFull,
                                 missedFuelUp = missedFuelUp,
-                                notes = notes.ifBlank { null },
-                                tags = tags.ifBlank { null },
+                                // Send empty strings rather than null so notes/tags are always
+                                // present in the form body, matching what LubeLogger's web UI sends.
+                                notes = notes,
+                                tags = tags,
                                 planType = planType,
                                 priority = priority,
                                 progress = progress,

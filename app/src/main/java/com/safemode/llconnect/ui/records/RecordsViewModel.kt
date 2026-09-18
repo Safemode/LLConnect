@@ -34,6 +34,11 @@ class RecordsViewModel(
         viewModelScope.launch { reload(showLoading = true) }
     }
 
+    /** Silent reload (e.g. when returning to the screen after add/edit/delete). */
+    fun reloadSilently() {
+        viewModelScope.launch { reload(showLoading = false) }
+    }
+
     /** Pull-to-refresh: reload without replacing the list with a full-screen spinner. */
     fun refresh() {
         viewModelScope.launch {
@@ -47,7 +52,12 @@ class RecordsViewModel(
         if (showLoading) _state.value = UiState.Loading
         _state.value = repository.getRecords(area, vehicleId).fold(
             onSuccess = { UiState.Success(it) },
-            onFailure = { UiState.Error(it.message ?: "Failed to load records.") },
+            onFailure = { failure ->
+                // A background refresh that fails shouldn't wipe already-loaded data.
+                val current = _state.value
+                if (!showLoading && current is UiState.Success) current
+                else UiState.Error(failure.message ?: "Failed to load records.")
+            },
         )
     }
 

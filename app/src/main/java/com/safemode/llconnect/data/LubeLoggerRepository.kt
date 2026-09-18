@@ -1,6 +1,7 @@
 package com.safemode.llconnect.data
 
 import com.safemode.llconnect.data.remote.ApiProvider
+import com.safemode.llconnect.data.remote.FormEncoder
 import com.safemode.llconnect.data.remote.LubeLoggerApi
 import com.safemode.llconnect.data.remote.models.FileAttachment
 import com.safemode.llconnect.data.remote.models.FileAttachmentResponse
@@ -89,10 +90,11 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         fromList ?: api.getVehicleInfo(vehicleId).unwrap().firstOrNull()
     }
 
-    suspend fun addVehicle(body: VehicleAddRequest): Result<Unit> = callUnit { it.addVehicle(body) }
+    suspend fun addVehicle(body: VehicleAddRequest): Result<Unit> =
+        callUnit { it.addVehicle(FormEncoder.fields(body)) }
 
     suspend fun updateVehicle(body: VehicleUpdateRequest): Result<Unit> =
-        callUnit { it.updateVehicle(body) }
+        callUnit { it.updateVehicle(FormEncoder.fields(body)) }
 
     suspend fun deleteVehicle(id: String): Result<Unit> = callUnit { it.deleteVehicle(id) }
 
@@ -339,73 +341,75 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     // ---- Records: add (core areas) ----
     suspend fun addServiceLike(area: RecordArea, vehicleId: String, body: GenericRecordRequest): Result<Unit> =
         callUnit { api ->
+            val fields = FormEncoder.fields(body)
             when (area) {
-                RecordArea.SERVICE -> api.addServiceRecord(vehicleId, body)
-                RecordArea.REPAIR -> api.addRepairRecord(vehicleId, body)
-                RecordArea.UPGRADE -> api.addUpgradeRecord(vehicleId, body)
+                RecordArea.SERVICE -> api.addServiceRecord(vehicleId, fields)
+                RecordArea.REPAIR -> api.addRepairRecord(vehicleId, fields)
+                RecordArea.UPGRADE -> api.addUpgradeRecord(vehicleId, fields)
                 else -> throw IllegalArgumentException("Unsupported area for service-like add: $area")
             }
         }
 
     suspend fun addTax(vehicleId: String, body: TaxRecordRequest): Result<Unit> =
-        callUnit { it.addTaxRecord(vehicleId, body) }
+        callUnit { it.addTaxRecord(vehicleId, FormEncoder.fields(body)) }
 
     suspend fun addGas(vehicleId: String, body: GasRecordRequest): Result<Unit> =
-        callUnit { it.addGasRecord(vehicleId, body) }
+        callUnit { it.addGasRecord(vehicleId, FormEncoder.fields(body)) }
 
     suspend fun addOdometer(vehicleId: String, body: OdometerRecordRequest): Result<Unit> =
-        callUnit { it.addOdometerRecord(vehicleId, body) }
+        callUnit { it.addOdometerRecord(vehicleId, FormEncoder.fields(body)) }
 
     // ---- Records: update (core areas) ----
     suspend fun updateServiceLike(area: RecordArea, body: GenericRecordRequest): Result<Unit> =
         callUnit { api ->
+            val fields = FormEncoder.fields(body)
             when (area) {
-                RecordArea.SERVICE -> api.updateServiceRecord(body)
-                RecordArea.REPAIR -> api.updateRepairRecord(body)
-                RecordArea.UPGRADE -> api.updateUpgradeRecord(body)
+                RecordArea.SERVICE -> api.updateServiceRecord(fields)
+                RecordArea.REPAIR -> api.updateRepairRecord(fields)
+                RecordArea.UPGRADE -> api.updateUpgradeRecord(fields)
                 else -> throw IllegalArgumentException("Unsupported area for service-like update: $area")
             }
         }
 
     suspend fun updateTax(body: TaxRecordRequest): Result<Unit> =
-        callUnit { it.updateTaxRecord(body) }
+        callUnit { it.updateTaxRecord(FormEncoder.fields(body)) }
 
     suspend fun updateGas(body: GasRecordRequest): Result<Unit> =
-        callUnit { it.updateGasRecord(body) }
+        callUnit { it.updateGasRecord(FormEncoder.fields(body)) }
 
     suspend fun updateOdometer(body: OdometerRecordRequest): Result<Unit> =
-        callUnit { it.updateOdometerRecord(body) }
+        callUnit { it.updateOdometerRecord(FormEncoder.fields(body)) }
 
     // ---- Records: add/update (planner, supplies, reminders, equipment, notes) ----
     suspend fun addPlan(vehicleId: String, body: PlanRecordRequest): Result<Unit> =
-        callUnit { it.addPlanRecord(vehicleId, body) }
+        callUnit { it.addPlanRecord(vehicleId, FormEncoder.fields(body)) }
 
     suspend fun updatePlan(body: PlanRecordRequest): Result<Unit> =
-        callUnit { it.updatePlanRecord(body) }
+        callUnit { it.updatePlanRecord(FormEncoder.fields(body)) }
 
     suspend fun addSupply(vehicleId: String, body: SupplyRecordRequest): Result<Unit> =
-        callUnit { it.addSupplyRecord(vehicleId, body) }
+        callUnit { it.addSupplyRecord(vehicleId, FormEncoder.fields(body)) }
 
     suspend fun updateSupply(body: SupplyRecordRequest): Result<Unit> =
-        callUnit { it.updateSupplyRecord(body) }
+        callUnit { it.updateSupplyRecord(FormEncoder.fields(body)) }
 
     suspend fun addReminder(vehicleId: String, body: ReminderRecordRequest): Result<Unit> =
-        callUnit { it.addReminder(vehicleId, body) }
+        callUnit { it.addReminder(vehicleId, FormEncoder.fields(body)) }
 
     suspend fun updateReminder(body: ReminderRecordRequest): Result<Unit> =
-        callUnit { it.updateReminder(body) }
+        callUnit { it.updateReminder(FormEncoder.fields(body)) }
 
     suspend fun addEquipment(vehicleId: String, body: EquipmentRecordRequest): Result<Unit> =
-        callUnit { it.addEquipmentRecord(vehicleId, body) }
+        callUnit { it.addEquipmentRecord(vehicleId, FormEncoder.fields(body)) }
 
     suspend fun updateEquipment(body: EquipmentRecordRequest): Result<Unit> =
-        callUnit { it.updateEquipmentRecord(body) }
+        callUnit { it.updateEquipmentRecord(FormEncoder.fields(body)) }
 
     suspend fun addNote(vehicleId: String, body: NoteRequest): Result<Unit> =
-        callUnit { it.addNote(vehicleId, body) }
+        callUnit { it.addNote(vehicleId, FormEncoder.fields(body)) }
 
     suspend fun updateNote(body: NoteRequest): Result<Unit> =
-        callUnit { it.updateNote(body) }
+        callUnit { it.updateNote(FormEncoder.fields(body)) }
 
     // ---- Records: fetch a single record for editing ----
     suspend fun getRecordForEdit(
@@ -478,34 +482,34 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         fun <T> T?.orThrow(): T = this ?: throw IllegalStateException("Record no longer exists.")
         val response: Response<*> = when (area) {
             RecordArea.SERVICE -> api.updateServiceRecord(
-                api.getServiceRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getServiceRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.REPAIR -> api.updateRepairRecord(
-                api.getRepairRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getRepairRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.UPGRADE -> api.updateUpgradeRecord(
-                api.getUpgradeRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getUpgradeRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.TAX -> api.updateTaxRecord(
-                api.getTaxRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toTaxUpdateRequest(files)
+                FormEncoder.fields(api.getTaxRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toTaxUpdateRequest(files))
             )
             RecordArea.GAS -> api.updateGasRecord(
-                api.getGasRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getGasRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.ODOMETER -> api.updateOdometerRecord(
-                api.getOdometerRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getOdometerRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.PLAN -> api.updatePlanRecord(
-                api.getPlanRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getPlanRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.SUPPLY -> api.updateSupplyRecord(
-                api.getSupplyRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getSupplyRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.EQUIPMENT -> api.updateEquipmentRecord(
-                api.getEquipmentRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getEquipmentRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.NOTE -> api.updateNote(
-                api.getNotes(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files)
+                FormEncoder.fields(api.getNotes(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
             )
             RecordArea.REMINDER -> throw IllegalArgumentException("Reminders don't support attachments.")
         }

@@ -63,6 +63,11 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
         viewModelScope.launch { reload(showLoading = true) }
     }
 
+    /** Silent reload (e.g. when returning after editing the vehicle or its records). */
+    fun reloadSilently() {
+        viewModelScope.launch { reload(showLoading = false) }
+    }
+
     /** Pull-to-refresh. */
     fun refresh() {
         viewModelScope.launch {
@@ -80,7 +85,12 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
                 if (vehicle != null) UiState.Success(vehicle)
                 else UiState.Error("Vehicle not found.")
             },
-            onFailure = { UiState.Error(it.message ?: "Failed to load vehicle.") },
+            onFailure = { failure ->
+                // A background refresh that fails shouldn't wipe already-loaded data.
+                val current = _state.value
+                if (!showLoading && current is UiState.Success) current
+                else UiState.Error(failure.message ?: "Failed to load vehicle.")
+            },
         )
         _state.value = result
         if (result is UiState.Success) loadSummaries()

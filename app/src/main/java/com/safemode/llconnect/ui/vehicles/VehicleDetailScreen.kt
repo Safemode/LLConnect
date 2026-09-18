@@ -87,6 +87,12 @@ fun VehicleDetailScreen(
 
     val title = (state as? UiState.Success)?.data?.displayName ?: "Vehicle"
 
+    // Refresh quietly whenever the screen resumes (e.g. after editing or adding records).
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        viewModel.reloadSilently()
+        onPauseOrDispose { }
+    }
+
     // After a successful delete, leave the screen.
     LaunchedEffect(deleted) {
         if (deleted) onBack()

@@ -75,6 +75,12 @@ fun RecordsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<RecordRow?>(null) }
 
+    // Refresh quietly whenever the screen resumes (e.g. after returning from add/edit).
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        viewModel.reloadSilently()
+        onPauseOrDispose { }
+    }
+
     LaunchedEffect(message) {
         message?.let {
             snackbarHostState.showSnackbar(it)
