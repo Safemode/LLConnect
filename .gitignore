@@ -40,3 +40,6 @@ captures/
 
 # Kotlin
 .kotlin/
+
+# Local-only working notes (not for the repo)
+docs/lubelogger-bug-report.md
