@@ -13,6 +13,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -96,8 +98,11 @@ fun RecordFormScreen(
 
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var odometer by remember { mutableStateOf("") }
-    // Preserved from the loaded odometer record; the update endpoint requires it back.
-    var initialOdometer by remember { mutableStateOf<Long?>(null) }
+    // Odometer records: the reading the entry counts up from. Prefilled (carried from the
+    // previous entry when adding, or the record's own value when editing) and read-only until
+    // the user taps the edit toggle beside it.
+    var initialOdometer by remember { mutableStateOf("") }
+    var initialOdometerLocked by remember { mutableStateOf(true) }
     var description by remember { mutableStateOf("") }
     var cost by remember { mutableStateOf("") }
     var fuelConsumed by remember { mutableStateOf("") }
@@ -136,7 +141,7 @@ fun RecordFormScreen(
                 if (data != null) {
                     date = data.date?.ifBlank { date } ?: date
                     odometer = data.odometer?.toString() ?: ""
-                    initialOdometer = data.initialOdometer
+                    initialOdometer = data.initialOdometer?.toString() ?: ""
                     description = data.description.orEmpty()
                     cost = data.cost?.toString() ?: ""
                     fuelConsumed = data.fuelConsumed?.toString() ?: ""
@@ -166,6 +171,14 @@ fun RecordFormScreen(
                 loading = false
             },
         )
+    }
+
+    // New odometer record: carry the previous entry's reading over as the initial odometer.
+    LaunchedEffect(area, isEdit) {
+        if (isEdit || area != RecordArea.ODOMETER) return@LaunchedEffect
+        Graph.repository.latestOdometer(vehicleId).onSuccess { last ->
+            if (last != null && initialOdometer.isBlank()) initialOdometer = last.toString()
+        }
     }
 
     val showDate = area in setOf(
@@ -222,6 +235,31 @@ fun RecordFormScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            if (area == RecordArea.ODOMETER) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = initialOdometer,
+                        onValueChange = { initialOdometer = it.filter(Char::isDigit) },
+                        label = { Text("Initial odometer") },
+                        singleLine = true,
+                        readOnly = initialOdometerLocked,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        supportingText = {
+                            Text(
+                                if (initialOdometerLocked) "Carried from the previous entry — tap edit to change"
+                                else "Editing",
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { initialOdometerLocked = !initialOdometerLocked }) {
+                        Icon(
+                            imageVector = if (initialOdometerLocked) Icons.Filled.Edit else Icons.Filled.Check,
+                            contentDescription = if (initialOdometerLocked) "Edit initial odometer" else "Done editing",
+                        )
+                    }
+                }
             }
             if (showDescription) {
                 OutlinedTextField(
@@ -357,7 +395,7 @@ fun RecordFormScreen(
                             values = FormValues(
                                 date = date,
                                 odometer = odometer.toLongOrNull(),
-                                initialOdometer = initialOdometer,
+                                initialOdometer = initialOdometer.toLongOrNull(),
                                 description = description.ifBlank { null },
                                 cost = cost.toDoubleOrNull(),
                                 fuelConsumed = fuelConsumed.toDoubleOrNull(),

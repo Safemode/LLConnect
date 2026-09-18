@@ -303,6 +303,15 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
             }
         }
 
+    /**
+     * Highest existing odometer reading for a vehicle, used to prefill the "initial odometer"
+     * on a new odometer record (LubeLogger's web UI carries the previous entry over the same way).
+     */
+    suspend fun latestOdometer(vehicleId: String): Result<Long?> =
+        runCatching {
+            api().getOdometerRecords(vehicleId).unwrap().mapNotNull { it.odometer }.maxOrNull()
+        }
+
     /** Count + most-recent (or soonest-due, for reminders) date for a single area. */
     suspend fun getAreaSummary(area: RecordArea, vehicleId: String): Result<AreaSummary> =
         runCatching {
