@@ -145,7 +145,7 @@ fun LLConnectRoot() {
                 DashboardScreen(
                     onOpenDrawer = openDrawer,
                     onOpenVehicles = { navController.navigate(Routes.VEHICLES) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenServer = { navController.navigate(Routes.SERVER) },
                     onOpenVehicle = { id -> navController.navigate(Routes.vehicleDetail(id)) },
                 )
             }

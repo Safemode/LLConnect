@@ -41,7 +41,7 @@ import com.safemode.llconnect.ui.vehicles.VehiclesViewModel
 fun DashboardScreen(
     onOpenDrawer: () -> Unit,
     onOpenVehicles: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenServer: () -> Unit,
     onOpenVehicle: (String) -> Unit,
     viewModel: VehiclesViewModel = viewModel(),
 ) {
@@ -82,8 +82,8 @@ fun DashboardScreen(
                     icon = Icons.Filled.Settings,
                     title = "Welcome to LLConnect",
                     message = "Connect to your self-hosted LubeLogger instance to get started.",
-                    actionLabel = "Open Settings",
-                    onAction = onOpenSettings,
+                    actionLabel = "Set up connection",
+                    onAction = onOpenServer,
                 )
                 is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
                 is UiState.Success -> LazyColumn(
