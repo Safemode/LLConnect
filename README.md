@@ -3,6 +3,12 @@
 A Material Design 3 Android client for a self-hosted [LubeLogger](https://github.com/hargata/lubelog)
 instance. API calls are modeled on the LubeLogger v1.7.3 OpenAPI schema.
 
+## AI Transparency
+
+This app was essentially completely built using Claude Code. I've tried (and failed) to teach myself
+Android Development and I didn't get very far, so this was my alternative option to create something
+that would give me easy access to my LubeLogger instance.
+
 ## Getting started
 
 1. Build & install the app (Android Studio, or `./gradlew installDebug`).
