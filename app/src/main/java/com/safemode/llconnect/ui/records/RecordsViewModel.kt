@@ -6,6 +6,7 @@ import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.RecordArea
 import com.safemode.llconnect.data.RecordRow
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +26,7 @@ class RecordsViewModel(
 
     init {
         load()
+        refreshWhenServerReachable { reloadSilently() }
     }
 
     fun load() {

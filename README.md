@@ -32,6 +32,22 @@ traffic is enabled in the manifest.
   ciphertext is written to disk. Legacy plaintext values are migrated on the next save.
 - **DI:** a small manual `Graph` container initialized from `LLConnectApp`.
 
+### Offline caching
+
+GET responses are stored in an on-disk OkHttp cache so the app stays usable when the server
+can't be reached. When online it always re-fetches fresh data; when the server is
+unreachable it serves the cached copy instead.
+
+- **Reachability** is tracked as `CHECKING → REACHABLE / UNREACHABLE`. A `ConnectivityManager`
+  callback (`NetworkMonitor`) reacts to network changes instantly, and a lightweight
+  background probe (`/api/whoami`) resolves the state without ever blocking the UI. While the
+  server isn't confirmed reachable, GETs short-circuit straight to cache, so launching and
+  navigating offline are instant. When a probe reconnects, screens auto-refresh to live data.
+- **App-wide banner:** a neutral "Connecting…" bar while checking, and a red "Server
+  unreachable — showing cached data" bar once it's confirmed down.
+- **Settings → Offline cache:** shows current usage vs. the limit, a selectable maximum size
+  (25 MB–500 MB), and a **Clear cache** button.
+
 ## Feature areas
 
 | Area | Read | Add | Edit | Delete |

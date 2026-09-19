@@ -7,6 +7,7 @@ import com.safemode.llconnect.data.AreaSummary
 import com.safemode.llconnect.data.RecordArea
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +43,7 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
 
     init {
         load()
+        refreshWhenServerReachable { reloadSilently() }
     }
 
     fun delete() {
