@@ -9,9 +9,11 @@ import com.safemode.llconnect.data.settings.ConnectionConfig
 import com.safemode.llconnect.ui.common.UiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ServerInfo(
     val user: WhoAmI?,
@@ -92,6 +94,10 @@ class ServerViewModel : ViewModel() {
             return
         }
         if (showLoading) _state.value = UiState.Loading
+        // The Server screen is where the user explicitly tests/retries the connection, so force a
+        // real network probe (bypassing the cache short-circuit) and update reachability from it.
+        val reachable = withContext(Dispatchers.IO) { Graph.apiProvider.probeReachable() }
+        Graph.serverStatus.report(reachable)
         val who = repository.whoAmI()
         if (who.isFailure) {
             _state.value = UiState.Error(who.exceptionOrNull()?.message ?: "Failed to reach server.")

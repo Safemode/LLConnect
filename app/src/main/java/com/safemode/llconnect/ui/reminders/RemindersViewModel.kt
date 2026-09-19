@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.ReminderItem
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,7 @@ class RemindersViewModel : ViewModel() {
 
     init {
         load()
+        refreshWhenServerReachable { refresh() }
     }
 
     fun load() {

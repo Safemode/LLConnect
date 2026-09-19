@@ -6,6 +6,7 @@ import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.CostReport
 import com.safemode.llconnect.ui.common.DateRange
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +28,7 @@ class ReportsViewModel : ViewModel() {
 
     init {
         load()
+        refreshWhenServerReachable { refresh() }
     }
 
     fun load() {

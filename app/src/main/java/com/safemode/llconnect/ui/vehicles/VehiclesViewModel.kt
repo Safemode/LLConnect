@@ -6,6 +6,7 @@ import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.data.settings.ConnectionConfig
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +36,7 @@ class VehiclesViewModel : ViewModel() {
                 .distinctUntilChanged { old, new -> old.first == new.first }
                 .collect { (_, config) -> reload(config) }
         }
+        refreshWhenServerReachable { reloadSilently() }
     }
 
     /** Manual retry using the latest saved config. */

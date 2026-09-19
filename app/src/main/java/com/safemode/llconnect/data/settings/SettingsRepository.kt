@@ -30,6 +30,7 @@ class SettingsRepository(private val context: Context) {
         val CULTURE_INVARIANT = booleanPreferencesKey("culture_invariant")
         val FUEL_UNIT = stringPreferencesKey("fuel_unit")
         val SORT_ORDER = stringPreferencesKey("record_sort_order")
+        val CACHE_SIZE = stringPreferencesKey("cache_size")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -49,6 +50,9 @@ class SettingsRepository(private val context: Context) {
             recordSortOrder = runCatching {
                 RecordSortOrder.valueOf(prefs[Keys.SORT_ORDER] ?: "OLDEST_FIRST")
             }.getOrDefault(RecordSortOrder.OLDEST_FIRST),
+            cacheSize = runCatching {
+                CacheSize.valueOf(prefs[Keys.CACHE_SIZE] ?: "MB_50")
+            }.getOrDefault(CacheSize.MB_50),
         )
     }
 
@@ -64,6 +68,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.CULTURE_INVARIANT] = config.cultureInvariant
             prefs[Keys.FUEL_UNIT] = config.fuelEconomyUnit.name
             prefs[Keys.SORT_ORDER] = config.recordSortOrder.name
+            prefs[Keys.CACHE_SIZE] = config.cacheSize.name
         }
     }
 }

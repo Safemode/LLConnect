@@ -15,6 +15,15 @@ enum class RecordSortOrder(val label: String) {
     NEWEST_FIRST("Newest first"),
 }
 
+/** Selectable on-device HTTP cache size limits. */
+enum class CacheSize(val label: String, val bytes: Long) {
+    MB_25("25 MB", 25L * 1024 * 1024),
+    MB_50("50 MB", 50L * 1024 * 1024),
+    MB_100("100 MB", 100L * 1024 * 1024),
+    MB_250("250 MB", 250L * 1024 * 1024),
+    MB_500("500 MB", 500L * 1024 * 1024),
+}
+
 /** User-supplied connection details for a self-hosted LubeLogger instance. */
 data class ConnectionConfig(
     val scheme: String = "http",
@@ -27,6 +36,7 @@ data class ConnectionConfig(
     val cultureInvariant: Boolean = true,
     val fuelEconomyUnit: FuelEconomyUnit = FuelEconomyUnit.DEFAULT,
     val recordSortOrder: RecordSortOrder = RecordSortOrder.OLDEST_FIRST,
+    val cacheSize: CacheSize = CacheSize.MB_50,
 ) {
     /** True once there is enough to attempt a connection. */
     val isConfigured: Boolean

@@ -11,11 +11,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -37,6 +42,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.safemode.llconnect.Graph
+import com.safemode.llconnect.data.remote.ServerReachability
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,6 +78,9 @@ fun LLConnectRoot() {
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    val serverState by Graph.serverStatus.state.collectAsStateWithLifecycle()
+    val showBanner = serverState != ServerReachability.REACHABLE
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
@@ -140,7 +152,21 @@ fun LLConnectRoot() {
             }
         },
     ) {
-        NavHost(navController = navController, startDestination = Routes.DASHBOARD) {
+        // When the banner shows, consume the status-bar inset here so the banner sits below the
+        // status bar (and the screens below don't double-inset). When hidden, leave insets to the
+        // screens' own top bars so they keep the normal edge-to-edge look.
+        val contentModifier = if (showBanner) {
+            Modifier.fillMaxSize().statusBarsPadding()
+        } else {
+            Modifier.fillMaxSize()
+        }
+        Column(modifier = contentModifier) {
+            ConnectivityBanner(state = serverState)
+            NavHost(
+                navController = navController,
+                startDestination = Routes.DASHBOARD,
+                modifier = Modifier.weight(1f),
+            ) {
             composable(Routes.DASHBOARD) {
                 DashboardScreen(
                     onOpenDrawer = openDrawer,
@@ -265,7 +291,62 @@ fun LLConnectRoot() {
             composable(Routes.SETTINGS) {
                 SettingsScreen(onOpenDrawer = openDrawer)
             }
+            }
         }
+    }
+}
+
+@Composable
+private fun ConnectivityBanner(state: ServerReachability) {
+    when (state) {
+        ServerReachability.REACHABLE -> return
+        ServerReachability.CHECKING -> ConnectivityBar(
+            background = MaterialTheme.colorScheme.secondaryContainer,
+            foreground = MaterialTheme.colorScheme.onSecondaryContainer,
+            text = "Connecting to server… showing cached data",
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+        ServerReachability.UNREACHABLE -> ConnectivityBar(
+            background = MaterialTheme.colorScheme.error,
+            foreground = MaterialTheme.colorScheme.onError,
+            text = "Server unreachable — showing cached data if available",
+        ) {
+            Icon(
+                imageVector = Icons.Filled.CloudOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConnectivityBar(
+    background: Color,
+    foreground: Color,
+    text: String,
+    leading: @Composable () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(background)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        leading()
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = text,
+            color = foreground,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
