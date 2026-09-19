@@ -123,6 +123,8 @@ The server also reports the signed-in identity: under API-key auth LubeLogger re
 
 ## Suggested next steps
 
+- Mark a vehicle as a "favorite."
+- Quick-entry floating buttons at the bottom of the dashboard for a fast odometer or fuel entry against the favorited vehicle.
 - Tag filters on History/Reports (the `tags` param; date-range filters are already in).
 - Extra-field editing across records and vehicles.
 - Optional biometric gate (`setUserAuthenticationRequired`) on the Keystore secret key.
