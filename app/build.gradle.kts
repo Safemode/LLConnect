@@ -13,7 +13,7 @@ android {
         applicationId = "com.safemode.llconnect"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -33,6 +33,19 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+}
+
+// Name the built APKs: release -> llconnect.apk, debug -> llconnect-debug.apk.
+androidComponents {
+    onVariants { variant ->
+        val apkName = when (variant.buildType) {
+            "debug" -> "llconnect-debug.apk"
+            else -> "llconnect.apk"
+        }
+        variant.outputs
+            .filterIsInstance<com.android.build.api.variant.impl.VariantOutputImpl>()
+            .forEach { it.outputFileName.set(apkName) }
     }
 }
 
