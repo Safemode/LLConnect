@@ -4,20 +4,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -32,9 +28,8 @@ import com.safemode.llconnect.data.settings.ConnectionConfig
 
 private const val LUBELOGGER_URL = "https://github.com/hargata/lubelog"
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onOpenDrawer: () -> Unit) {
+fun AboutScreen() {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val appVersion = remember {
@@ -46,16 +41,7 @@ fun AboutScreen(onOpenDrawer: () -> Unit) {
         .collectAsStateWithLifecycle(initialValue = ConnectionConfig())
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("About") },
-                navigationIcon = {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(Icons.Filled.Menu, contentDescription = "Menu")
-                    }
-                },
-            )
-        },
+        contentWindowInsets = WindowInsets.navigationBars,
     ) { padding ->
         Column(
             modifier = Modifier
