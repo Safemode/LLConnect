@@ -8,11 +8,13 @@ import com.safemode.llconnect.data.settings.ConnectionConfig
 import com.safemode.llconnect.ui.common.UiState
 import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class VehiclesViewModel : ViewModel() {
@@ -27,6 +29,19 @@ class VehiclesViewModel : ViewModel() {
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    /** Id of the single favorite vehicle, or blank if none. */
+    val favoriteVehicleId: StateFlow<String> = settings.config
+        .map { it.favoriteVehicleId }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /** Toggle the given vehicle as the favorite; starring another replaces it. */
+    fun toggleFavorite(vehicleId: String) {
+        viewModelScope.launch {
+            val current = settings.config.first().favoriteVehicleId
+            settings.setFavoriteVehicle(if (current == vehicleId) null else vehicleId)
+        }
+    }
 
     init {
         // React to connection changes (e.g. after saving Settings) by reloading automatically.

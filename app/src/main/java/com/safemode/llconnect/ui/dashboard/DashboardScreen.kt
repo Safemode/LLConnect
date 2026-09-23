@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -21,17 +22,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.safemode.llconnect.data.RecordArea
 import com.safemode.llconnect.ui.common.clearImageCache
 import com.safemode.llconnect.ui.common.EmptyState
 import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.records.icon
 import com.safemode.llconnect.ui.vehicles.VehicleCard
 import com.safemode.llconnect.ui.vehicles.VehiclesViewModel
 
@@ -41,11 +45,13 @@ fun DashboardScreen(
     onOpenVehicles: () -> Unit,
     onOpenServer: () -> Unit,
     onOpenVehicle: (String) -> Unit,
+    onQuickEntry: (vehicleId: String, areaName: String) -> Unit,
     viewModel: VehiclesViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val baseUrl by viewModel.baseUrl.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val favoriteId by viewModel.favoriteVehicleId.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Refresh quietly when returning to the dashboard (e.g. after add/edit/delete).
@@ -56,6 +62,31 @@ fun DashboardScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
+        floatingActionButton = {
+            val vehicles = (state as? UiState.Success)?.data
+            val favVehicleId = if (favoriteId.isNotBlank()) {
+                vehicles?.firstOrNull { it.id?.toString() == favoriteId }?.id?.toString()
+            } else {
+                null
+            }
+            if (favVehicleId != null) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ExtendedFloatingActionButton(
+                        text = { Text("Odometer") },
+                        icon = { Icon(RecordArea.ODOMETER.icon(), contentDescription = null) },
+                        onClick = { onQuickEntry(favVehicleId, RecordArea.ODOMETER.name) },
+                    )
+                    ExtendedFloatingActionButton(
+                        text = { Text("Fuel") },
+                        icon = { Icon(RecordArea.GAS.icon(), contentDescription = null) },
+                        onClick = { onQuickEntry(favVehicleId, RecordArea.GAS.name) },
+                    )
+                }
+            }
+        },
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -112,6 +143,10 @@ fun DashboardScreen(
                             VehicleCard(
                                 vehicle = vehicle,
                                 baseUrl = baseUrl,
+                                isFavorite = vehicle.id?.toString() == favoriteId,
+                                onToggleFavorite = {
+                                    vehicle.id?.let { viewModel.toggleFavorite(it.toString()) }
+                                },
                                 onClick = { vehicle.id?.let { onOpenVehicle(it.toString()) } },
                             )
                         }

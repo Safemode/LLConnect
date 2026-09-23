@@ -40,6 +40,7 @@ import coil.compose.AsyncImage
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.ui.common.clearImageCache
 import com.safemode.llconnect.ui.common.EmptyState
+import com.safemode.llconnect.ui.common.FavoriteStar
 import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
 import com.safemode.llconnect.ui.common.UiState
@@ -54,6 +55,7 @@ fun VehiclesScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val baseUrl by viewModel.baseUrl.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val favoriteId by viewModel.favoriteVehicleId.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Refresh quietly when returning to this screen (e.g. after add/edit/delete).
@@ -107,6 +109,10 @@ fun VehiclesScreen(
                             VehicleCard(
                                 vehicle = vehicle,
                                 baseUrl = baseUrl,
+                                isFavorite = vehicle.id?.toString() == favoriteId,
+                                onToggleFavorite = {
+                                    vehicle.id?.let { viewModel.toggleFavorite(it.toString()) }
+                                },
                                 onClick = { vehicle.id?.let { onOpenVehicle(it.toString()) } },
                             )
                         }
@@ -121,6 +127,8 @@ fun VehiclesScreen(
 fun VehicleCard(
     vehicle: Vehicle,
     baseUrl: String?,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
     Card(
@@ -129,7 +137,7 @@ fun VehicleCard(
             .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -176,6 +184,11 @@ fun VehicleCard(
                     )
                 }
             }
+            FavoriteStar(
+                isFavorite = isFavorite,
+                onFavoriteChange = { onToggleFavorite() },
+                itemName = vehicle.displayName,
+            )
         }
     }
 }

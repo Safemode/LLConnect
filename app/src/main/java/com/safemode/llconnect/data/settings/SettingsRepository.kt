@@ -32,6 +32,7 @@ class SettingsRepository(private val context: Context) {
         val SORT_ORDER = stringPreferencesKey("record_sort_order")
         val CACHE_SIZE = stringPreferencesKey("cache_size")
         val THEME = stringPreferencesKey("theme_preference")
+        val FAVORITE_VEHICLE = stringPreferencesKey("favorite_vehicle")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -57,6 +58,7 @@ class SettingsRepository(private val context: Context) {
             themePreference = runCatching {
                 ThemePreference.valueOf(prefs[Keys.THEME] ?: "SYSTEM")
             }.getOrDefault(ThemePreference.SYSTEM),
+            favoriteVehicleId = prefs[Keys.FAVORITE_VEHICLE] ?: "",
         )
     }
 
@@ -74,6 +76,21 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.SORT_ORDER] = config.recordSortOrder.name
             prefs[Keys.CACHE_SIZE] = config.cacheSize.name
             prefs[Keys.THEME] = config.themePreference.name
+            prefs[Keys.FAVORITE_VEHICLE] = config.favoriteVehicleId
+        }
+    }
+
+    /**
+     * Sets or clears the favorite vehicle without touching any other field. A blank/null id
+     * removes the favorite.
+     */
+    suspend fun setFavoriteVehicle(vehicleId: String?) {
+        context.dataStore.edit { prefs ->
+            if (vehicleId.isNullOrBlank()) {
+                prefs.remove(Keys.FAVORITE_VEHICLE)
+            } else {
+                prefs[Keys.FAVORITE_VEHICLE] = vehicleId
+            }
         }
     }
 }

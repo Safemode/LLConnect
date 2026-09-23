@@ -93,6 +93,14 @@ deleting a record, or changing the connection. Dated record lists (odometer, ser
 …) are ordered by date in the direction chosen in **Settings → Record list order**
 (oldest-first by default); undated rows fall to the bottom.
 
+### Favorite & quick entry
+
+Tap the star on any vehicle (in the Vehicles list or on the home dashboard) to mark it your
+favorite; a single vehicle is favorited at a time, so starring another moves the star. The
+choice is stored on the device. When a favorite is set, the home dashboard shows two
+quick-entry buttons — **Odometer** and **Fuel** — that jump straight to a new record for that
+vehicle, skipping the vehicle → area navigation.
+
 ### Navigation drawer
 
 The drawer holds the primary destinations (Dashboard, Vehicles, and the garage-wide views
@@ -124,8 +132,8 @@ The server also reports the signed-in identity: under API-key auth LubeLogger re
 
 ## Suggested next steps
 
-- Mark a vehicle as a "favorite."
-- Quick-entry floating buttons at the bottom of the dashboard for a fast odometer or fuel entry against the favorited vehicle.
+- App-wide search across vehicles and records.
+- Per-list sort picker (in addition to the global default in Settings).
 - Tag filters on History/Reports (the `tags` param; date-range filters are already in).
 - Extra-field editing across records and vehicles.
 - Optional biometric gate (`setUserAuthenticationRequired`) on the Keystore secret key.
