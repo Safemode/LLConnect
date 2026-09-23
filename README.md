@@ -19,8 +19,9 @@ that would give me easy access to my LubeLogger instance.
 3. Tap **Save & test connection** to persist the details and verify them against `/api/whoami`;
    the signed-in identity and server version appear below.
 
-App preferences (fuel-economy units, record-list order) live separately under **Settings**
-and save the moment you change them.
+App preferences (theme, fuel-economy units, record-list order) live separately under **Settings**
+and save the moment you change them. The theme offers System / Light / Dark / Midnight, where
+Midnight is a dark theme with pure-black surfaces for OLED screens.
 
 Self-hosted instances are often reached over plain HTTP on a LAN address, so cleartext
 traffic is enabled in the manifest.
@@ -97,7 +98,7 @@ deleting a record, or changing the connection. Dated record lists (odometer, ser
 The drawer holds the primary destinations (Dashboard, Vehicles, and the garage-wide views
 below) at the top, with Tools, Server, About, and Settings pinned to the bottom. **Server**
 holds the connection, authentication, and culture-invariant settings plus the live
-signed-in/version info; **Settings** holds app preferences (fuel-economy units, record-list
+signed-in/version info; **Settings** holds app preferences (theme, fuel-economy units, record-list
 order). Swipe from the left edge to open the drawer; on the dashboard, a second back press
 within two seconds exits the app (a first press closes the drawer if it's open).
 

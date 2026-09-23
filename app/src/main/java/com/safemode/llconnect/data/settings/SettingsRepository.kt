@@ -31,6 +31,7 @@ class SettingsRepository(private val context: Context) {
         val FUEL_UNIT = stringPreferencesKey("fuel_unit")
         val SORT_ORDER = stringPreferencesKey("record_sort_order")
         val CACHE_SIZE = stringPreferencesKey("cache_size")
+        val THEME = stringPreferencesKey("theme_preference")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -53,6 +54,9 @@ class SettingsRepository(private val context: Context) {
             cacheSize = runCatching {
                 CacheSize.valueOf(prefs[Keys.CACHE_SIZE] ?: "MB_50")
             }.getOrDefault(CacheSize.MB_50),
+            themePreference = runCatching {
+                ThemePreference.valueOf(prefs[Keys.THEME] ?: "SYSTEM")
+            }.getOrDefault(ThemePreference.SYSTEM),
         )
     }
 
@@ -69,6 +73,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.FUEL_UNIT] = config.fuelEconomyUnit.name
             prefs[Keys.SORT_ORDER] = config.recordSortOrder.name
             prefs[Keys.CACHE_SIZE] = config.cacheSize.name
+            prefs[Keys.THEME] = config.themePreference.name
         }
     }
 }

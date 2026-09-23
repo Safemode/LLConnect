@@ -30,6 +30,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.safemode.llconnect.data.settings.CacheSize
 import com.safemode.llconnect.data.settings.FuelEconomyUnit
 import com.safemode.llconnect.data.settings.RecordSortOrder
+import com.safemode.llconnect.data.settings.ThemePreference
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -61,6 +62,30 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            // ---- Theme card ----
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Theme", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "App appearance. Midnight uses pure-black backgrounds, best on OLED screens.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ThemePreference.entries.forEach { pref ->
+                            FilterChip(
+                                selected = config.themePreference == pref,
+                                onClick = { viewModel.updateAndSave { it.copy(themePreference = pref) } },
+                                label = { Text(pref.label) },
+                            )
+                        }
+                    }
+                }
+            }
 
             // ---- Fuel economy card ----
             Card(modifier = Modifier.fillMaxWidth()) {

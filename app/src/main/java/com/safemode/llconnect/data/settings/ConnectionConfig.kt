@@ -24,6 +24,14 @@ enum class CacheSize(val label: String, val bytes: Long) {
     MB_500("500 MB", 500L * 1024 * 1024),
 }
 
+/** App appearance. Midnight is a dark theme with pure-black surfaces for OLED screens. */
+enum class ThemePreference(val label: String) {
+    SYSTEM("System"),
+    LIGHT("Light"),
+    DARK("Dark"),
+    MIDNIGHT("Midnight"),
+}
+
 /** User-supplied connection details for a self-hosted LubeLogger instance. */
 data class ConnectionConfig(
     val scheme: String = "http",
@@ -37,6 +45,7 @@ data class ConnectionConfig(
     val fuelEconomyUnit: FuelEconomyUnit = FuelEconomyUnit.DEFAULT,
     val recordSortOrder: RecordSortOrder = RecordSortOrder.OLDEST_FIRST,
     val cacheSize: CacheSize = CacheSize.MB_50,
+    val themePreference: ThemePreference = ThemePreference.SYSTEM,
 ) {
     /** True once there is enough to attempt a connection. */
     val isConfigured: Boolean

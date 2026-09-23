@@ -59,6 +59,7 @@ class SettingsViewModel : ViewModel() {
                 fuelEconomyUnit = updated.fuelEconomyUnit,
                 recordSortOrder = updated.recordSortOrder,
                 cacheSize = updated.cacheSize,
+                themePreference = updated.themePreference,
             )
             settings.save(merged)
             apiProvider.updateConfig(merged)
