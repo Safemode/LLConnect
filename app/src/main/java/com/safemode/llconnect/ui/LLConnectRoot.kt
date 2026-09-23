@@ -6,28 +6,26 @@ import android.content.ContextWrapper
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,10 +35,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.safemode.llconnect.Graph
@@ -56,6 +52,7 @@ import com.safemode.llconnect.ui.about.AboutScreen
 import com.safemode.llconnect.ui.attachments.AttachmentsScreen
 import com.safemode.llconnect.ui.dashboard.DashboardScreen
 import com.safemode.llconnect.ui.history.HistoryScreen
+import com.safemode.llconnect.ui.navigation.AppDrawerContent
 import com.safemode.llconnect.ui.navigation.Routes
 import com.safemode.llconnect.ui.navigation.TopDestination
 import com.safemode.llconnect.ui.records.RecordFormScreen
@@ -106,55 +103,24 @@ fun LLConnectRoot() {
         drawerState = drawerState,
         // Swipe from the left edge to open, and swipe to close while open.
         drawerContent = {
-            val navigateTo: (TopDestination) -> Unit = { dest ->
-                scope.launch { drawerState.close() }
-                if (currentRoute != dest.route) {
-                    navController.navigate(dest.route) {
-                        popUpTo(Routes.DASHBOARD)
-                        launchSingleTop = true
-                    }
-                }
-            }
-            ModalDrawerSheet {
-                Column(modifier = Modifier.fillMaxHeight()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "LLConnect",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = "LubeLogger companion",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    HorizontalDivider()
-                    // Primary destinations at the top; tools/server/about/settings at the bottom.
-                    val bottomItems = listOf(
-                        TopDestination.TOOLS,
-                        TopDestination.SERVER,
-                        TopDestination.ABOUT,
-                        TopDestination.SETTINGS,
-                    )
-                    TopDestination.entries
-                        .filter { it !in bottomItems }
-                        .forEach { dest ->
-                            DrawerItem(dest, currentRoute == dest.route) { navigateTo(dest) }
+            AppDrawerContent(
+                currentRoute = currentRoute,
+                onDestinationClick = { dest ->
+                    scope.launch { drawerState.close() }
+                    if (currentRoute != dest.route) {
+                        navController.navigate(dest.route) {
+                            popUpTo(Routes.DASHBOARD)
+                            launchSingleTop = true
                         }
-                    Spacer(modifier = Modifier.weight(1f))
-                    HorizontalDivider()
-                    bottomItems.forEach { dest ->
-                        DrawerItem(dest, currentRoute == dest.route) { navigateTo(dest) }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
+                },
+            )
         },
     ) {
         // When the banner shows, consume the status-bar inset here so the banner sits below the
-        // status bar (and the screens below don't double-inset). When hidden, leave insets to the
-        // screens' own top bars so they keep the normal edge-to-edge look.
+        // status bar (and the app bar below it doesn't double-inset). When hidden, the top app bar
+        // (or a pushed screen's own bar) consumes the status inset itself, keeping the normal
+        // edge-to-edge look.
         val contentModifier = if (showBanner) {
             Modifier.fillMaxSize().statusBarsPadding()
         } else {
@@ -162,6 +128,15 @@ fun LLConnectRoot() {
         }
         Column(modifier = contentModifier) {
             ConnectivityBanner(state = serverState)
+            // A single top app bar for the flat drawer destinations; pushed screens (detail,
+            // forms, attachments) carry their own back-arrow bar instead.
+            val topDest = TopDestination.entries.firstOrNull { it.route == currentRoute }
+            if (topDest != null) {
+                TopBar(
+                    title = if (topDest == TopDestination.DASHBOARD) "LLConnect" else topDest.label,
+                    onOpenDrawer = openDrawer,
+                )
+            }
             NavHost(
                 navController = navController,
                 startDestination = Routes.DASHBOARD,
@@ -169,7 +144,6 @@ fun LLConnectRoot() {
             ) {
             composable(Routes.DASHBOARD) {
                 DashboardScreen(
-                    onOpenDrawer = openDrawer,
                     onOpenVehicles = { navController.navigate(Routes.VEHICLES) },
                     onOpenServer = { navController.navigate(Routes.SERVER) },
                     onOpenVehicle = { id -> navController.navigate(Routes.vehicleDetail(id)) },
@@ -177,7 +151,6 @@ fun LLConnectRoot() {
             }
             composable(Routes.VEHICLES) {
                 VehiclesScreen(
-                    onOpenDrawer = openDrawer,
                     onAddVehicle = { navController.navigate(Routes.vehicleForm()) },
                     onOpenVehicle = { id -> navController.navigate(Routes.vehicleDetail(id)) },
                 )
@@ -271,25 +244,25 @@ fun LLConnectRoot() {
                 )
             }
             composable(Routes.REMINDERS) {
-                RemindersScreen(onOpenDrawer = openDrawer)
+                RemindersScreen()
             }
             composable(Routes.HISTORY) {
-                HistoryScreen(onOpenDrawer = openDrawer)
+                HistoryScreen()
             }
             composable(Routes.REPORTS) {
-                ReportsScreen(onOpenDrawer = openDrawer)
+                ReportsScreen()
             }
             composable(Routes.TOOLS) {
-                ToolsScreen(onOpenDrawer = openDrawer)
+                ToolsScreen()
             }
             composable(Routes.SERVER) {
-                ServerInfoScreen(onOpenDrawer = openDrawer)
+                ServerInfoScreen()
             }
             composable(Routes.ABOUT) {
-                AboutScreen(onOpenDrawer = openDrawer)
+                AboutScreen()
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(onOpenDrawer = openDrawer)
+                SettingsScreen()
             }
             }
         }
@@ -350,40 +323,17 @@ private fun ConnectivityBar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DrawerItem(dest: TopDestination, selected: Boolean, onClick: () -> Unit) {
-    // The item keeps the standard M3 drawer-item footprint (56dp), but the selected
-    // highlight pill is shorter top-to-bottom (inset vertically inside the row).
-    val container = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-    val content =
-        if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(40.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(container)
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(dest.icon, contentDescription = null, tint = content)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = dest.label,
-                style = MaterialTheme.typography.labelLarge,
-                color = content,
-            )
-        }
-    }
+private fun TopBar(title: String, onOpenDrawer: () -> Unit) {
+    TopAppBar(
+        title = { Text(title) },
+        navigationIcon = {
+            IconButton(onClick = onOpenDrawer) {
+                Icon(Icons.Filled.Menu, contentDescription = "Menu")
+            }
+        },
+    )
 }
 
 /** Unwraps the [Activity] from a (possibly wrapped) Compose [Context]. */
