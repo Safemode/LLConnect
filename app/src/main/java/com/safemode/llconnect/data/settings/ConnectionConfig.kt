@@ -46,6 +46,8 @@ data class ConnectionConfig(
     val recordSortOrder: RecordSortOrder = RecordSortOrder.OLDEST_FIRST,
     val cacheSize: CacheSize = CacheSize.MB_50,
     val themePreference: ThemePreference = ThemePreference.SYSTEM,
+    /** The one vehicle (by id) marked as favorite, or blank if none. Drives dashboard quick entry. */
+    val favoriteVehicleId: String = "",
 ) {
     /** True once there is enough to attempt a connection. */
     val isConfigured: Boolean

@@ -147,6 +147,9 @@ fun LLConnectRoot() {
                     onOpenVehicles = { navController.navigate(Routes.VEHICLES) },
                     onOpenServer = { navController.navigate(Routes.SERVER) },
                     onOpenVehicle = { id -> navController.navigate(Routes.vehicleDetail(id)) },
+                    onQuickEntry = { vehicleId, area ->
+                        navController.navigate(Routes.recordForm(vehicleId, area))
+                    },
                 )
             }
             composable(Routes.VEHICLES) {
