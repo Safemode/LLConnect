@@ -1,15 +1,17 @@
 package com.safemode.llconnect.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.safemode.llconnect.data.settings.ThemePreference
 
 private val LightColors = lightColorScheme(
     primary = md_primary_light,
@@ -61,12 +63,18 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun LLConnectTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themePreference: ThemePreference = ThemePreference.SYSTEM,
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = when (themePreference) {
+        ThemePreference.SYSTEM -> isSystemInDarkTheme()
+        ThemePreference.LIGHT -> false
+        ThemePreference.DARK, ThemePreference.MIDNIGHT -> true
+    }
+
     val context = LocalContext.current
-    val colorScheme = when {
+    val baseScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -74,9 +82,27 @@ fun LLConnectTheme(
         else -> LightColors
     }
 
+    // Midnight keeps the accent colours but blacks out the large surface areas for OLED.
+    val colorScheme =
+        if (themePreference == ThemePreference.MIDNIGHT) baseScheme.toMidnight() else baseScheme
+
     MaterialTheme(
         colorScheme = colorScheme,
         typography = LLTypography,
         content = content,
     )
 }
+
+/**
+ * Pure black where a whole screen is filled, but the container tones stay very dark grey rather
+ * than black, so cards, the drawer sheet and dividers remain visible against the page.
+ */
+private fun ColorScheme.toMidnight(): ColorScheme = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0A0A0A),
+    surfaceContainer = Color(0xFF111111),
+    surfaceContainerHigh = Color(0xFF181818),
+    surfaceContainerHighest = Color(0xFF202020),
+)
