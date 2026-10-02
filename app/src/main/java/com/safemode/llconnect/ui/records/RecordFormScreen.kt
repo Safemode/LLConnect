@@ -1,5 +1,6 @@
 package com.safemode.llconnect.ui.records
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,7 @@ import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
 import com.safemode.llconnect.data.remote.models.TaxRecordRequest
 import com.safemode.llconnect.ui.common.DateField
 import com.safemode.llconnect.ui.common.DropdownField
+import com.safemode.llconnect.ui.scan.ScanReceiptScreen
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
@@ -106,9 +108,6 @@ fun RecordFormScreen(
     recordId: String,
     onBack: () -> Unit,
     onAttachments: (String) -> Unit,
-    onScanReceipt: () -> Unit = {},
-    scannedReceiptPath: String? = null,
-    onScannedReceiptConsumed: () -> Unit = {},
 ) {
     val area = remember(areaName) { recordAreaFromName(areaName) }
     val isEdit = recordId.isNotBlank()
@@ -160,6 +159,7 @@ fun RecordFormScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var scanUploading by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
 
     // In edit mode, fetch the existing record and pre-fill the fields.
     LaunchedEffect(recordId) {
@@ -204,26 +204,6 @@ fun RecordFormScreen(
         )
     }
 
-    // A freshly scanned receipt arrives as a cache file path; upload it and attach it here.
-    LaunchedEffect(scannedReceiptPath) {
-        val path = scannedReceiptPath ?: return@LaunchedEffect
-        scanUploading = true
-        error = null
-        val file = File(path)
-        val bytes = runCatching { file.readBytes() }.getOrNull()
-        if (bytes == null) {
-            error = "Couldn't read the scanned image."
-        } else {
-            Graph.repository.uploadDocument(file.name, "image/jpeg", bytes).fold(
-                onSuccess = { attachments = attachments + it },
-                onFailure = { error = it.message ?: "Receipt upload failed." },
-            )
-            runCatching { file.delete() }
-        }
-        scanUploading = false
-        onScannedReceiptConsumed()
-    }
-
     // New odometer record: carry the previous entry's reading over as the initial odometer.
     LaunchedEffect(area, isEdit) {
         if (isEdit || area != RecordArea.ODOMETER) return@LaunchedEffect
@@ -248,6 +228,35 @@ fun RecordFormScreen(
     val showTags = area != RecordArea.PLAN
     val showGas = area == RecordArea.GAS
     val verb = if (isEdit) "Edit" else "Add"
+
+    // The receipt scanner renders in place (not as a separate destination) so the form stays in
+    // composition and the entered field values are preserved while scanning.
+    if (scanning) {
+        BackHandler { scanning = false }
+        ScanReceiptScreen(
+            onBack = { scanning = false },
+            onResult = { path ->
+                scanning = false
+                scanUploading = true
+                error = null
+                scope.launch {
+                    val file = File(path)
+                    val bytes = runCatching { file.readBytes() }.getOrNull()
+                    if (bytes == null) {
+                        error = "Couldn't read the scanned image."
+                    } else {
+                        Graph.repository.uploadDocument(file.name, "image/jpeg", bytes).fold(
+                            onSuccess = { attachments = attachments + it },
+                            onFailure = { error = it.message ?: "Receipt upload failed." },
+                        )
+                        runCatching { file.delete() }
+                    }
+                    scanUploading = false
+                }
+            },
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -454,7 +463,7 @@ fun RecordFormScreen(
                 ReceiptSection(
                     attachments = attachments,
                     uploading = scanUploading,
-                    onScan = onScanReceipt,
+                    onScan = { scanning = true },
                     onRemove = { file -> attachments = attachments - file },
                 )
             }

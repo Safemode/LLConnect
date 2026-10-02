@@ -38,9 +38,6 @@ object Routes {
         "attachments/$vehicleId/$area/$recordId"
     const val ATTACHMENTS = "attachments/{vehicleId}/{area}/{recordId}"
 
-    /** Receipt scanner. Returns the scanned image path to the previous screen. */
-    const val SCAN_RECEIPT = "scanReceipt"
-
     /** Vehicle add/edit form. Pass [vehicleId] to edit an existing vehicle. */
     fun vehicleForm(vehicleId: String? = null) = "vehicleForm?vehicleId=${vehicleId ?: ""}"
     const val VEHICLE_FORM = "vehicleForm?vehicleId={vehicleId}"
