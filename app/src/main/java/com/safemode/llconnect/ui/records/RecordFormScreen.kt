@@ -403,12 +403,6 @@ fun RecordFormScreen(
                 )
                 ToggleRow("Fill to full", isFillToFull) { isFillToFull = it }
                 ToggleRow("Missed a previous fuel-up", missedFuelUp) { missedFuelUp = it }
-                ReceiptSection(
-                    attachments = attachments,
-                    uploading = scanUploading,
-                    onScan = onScanReceipt,
-                    onRemove = { file -> attachments = attachments - file },
-                )
             }
 
             if (showCost) {
@@ -452,6 +446,16 @@ fun RecordFormScreen(
                     label = { Text("Tags (space-separated)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            // Receipt/document scanning, available on any area that carries attachments.
+            if (area.supportsAttachments) {
+                ReceiptSection(
+                    attachments = attachments,
+                    uploading = scanUploading,
+                    onScan = onScanReceipt,
+                    onRemove = { file -> attachments = attachments - file },
                 )
             }
 
