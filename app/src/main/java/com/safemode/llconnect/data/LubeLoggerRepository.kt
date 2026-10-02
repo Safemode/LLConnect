@@ -192,6 +192,9 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         FuelEconomyUnit.DEFAULT -> null to null
     }
 
+    /** Configured odometer label suffix (e.g. "mi" or "km") for display-only unit labels. */
+    private fun distanceSuffix(): String = apiProvider.currentConfig().distanceUnit.suffix
+
     /** Recent activity across every vehicle, newest first, optionally within a date range. */
     suspend fun getActivity(
         startDate: String? = null,
@@ -202,13 +205,14 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
             val names = vehicleNames(api)
             fun name(id: Long?) = names[id] ?: "Vehicle #${id ?: "?"}"
             val (useMpg, useUkMpg) = mpgParams()
+            val unit = distanceSuffix()
 
             val service = async { api.getAllServiceRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.SERVICE, ::name) } }
             val repair = async { api.getAllRepairRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.REPAIR, ::name) } }
             val upgrade = async { api.getAllUpgradeRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.UPGRADE, ::name) } }
             val tax = async { api.getAllTaxRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.TAX, ::name) } }
             val gas = async { api.getAllGasRecords(startDate, endDate, useMpg, useUkMpg).unwrap().map { it.toActivity(::name) } }
-            val odo = async { api.getAllOdometerRecords(startDate, endDate).unwrap().map { it.toActivity(::name) } }
+            val odo = async { api.getAllOdometerRecords(startDate, endDate).unwrap().map { it.toActivity(unit, ::name) } }
 
             (service.await() + repair.await() + upgrade.await() + tax.await() + gas.await() + odo.await())
                 .sortedByDescending { parseDate(it.date)?.toEpochDay() ?: Long.MIN_VALUE }
@@ -284,20 +288,21 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     suspend fun getRecords(area: RecordArea, vehicleId: String): Result<List<RecordRow>> =
         runCatching {
             val api = api()
+            val unit = distanceSuffix()
             when (area) {
-                RecordArea.SERVICE -> api.getServiceRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
-                RecordArea.REPAIR -> api.getRepairRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
-                RecordArea.UPGRADE -> api.getUpgradeRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
-                RecordArea.TAX -> api.getTaxRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow(isTax = true) }
+                RecordArea.SERVICE -> api.getServiceRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow(unit) }
+                RecordArea.REPAIR -> api.getRepairRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow(unit) }
+                RecordArea.UPGRADE -> api.getUpgradeRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow(unit) }
+                RecordArea.TAX -> api.getTaxRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow(unit, isTax = true) }
                 RecordArea.GAS -> {
                     val (useMpg, useUkMpg) = mpgParams()
-                    api.getGasRecords(vehicleId, useMpg, useUkMpg).unwrap().byDate { it.date }.map { it.toRow() }
+                    api.getGasRecords(vehicleId, useMpg, useUkMpg).unwrap().byDate { it.date }.map { it.toRow(unit) }
                 }
-                RecordArea.ODOMETER -> api.getOdometerRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
+                RecordArea.ODOMETER -> api.getOdometerRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow(unit) }
                 RecordArea.PLAN -> api.getPlanRecords(vehicleId).unwrap()
                     .byDate { it.dateModified ?: it.dateCreated }.map { it.toRow() }
                 RecordArea.SUPPLY -> api.getSupplyRecords(vehicleId).unwrap().byDate { it.date }.map { it.toRow() }
-                RecordArea.REMINDER -> api.getReminders(vehicleId).unwrap().map { it.toRow() }
+                RecordArea.REMINDER -> api.getReminders(vehicleId).unwrap().map { it.toRow(unit) }
                 RecordArea.EQUIPMENT -> api.getEquipmentRecords(vehicleId).unwrap().map { it.toRow() }
                 RecordArea.NOTE -> api.getNotes(vehicleId).unwrap().map { it.toRow() }
             }

@@ -26,20 +26,20 @@ private fun List<FileAttachmentResponse>?.toAttachments(): List<FileAttachment> 
 private fun money(value: Double?): String? =
     value?.let { "$" + String.format("%,.2f", it) }
 
-private fun odo(value: Long?): String? =
-    value?.let { String.format("%,d", it) + " mi/km" }
+private fun odo(value: Long?, unit: String): String? =
+    value?.let { String.format("%,d", it) + " " + unit }
 
-internal fun GenericRecord.toRow(isTax: Boolean = false): RecordRow = RecordRow(
+internal fun GenericRecord.toRow(unit: String, isTax: Boolean = false): RecordRow = RecordRow(
     id = id?.toString() ?: "",
     title = description?.ifBlank { "(no description)" } ?: "(no description)",
     subtitle = notes?.ifBlank { null },
     trailing = money(cost),
-    meta = listOfNotNull(date, if (!isTax) odo(odometer) else null).joinToString(" · ")
+    meta = listOfNotNull(date, if (!isTax) odo(odometer, unit) else null).joinToString(" · ")
         .ifBlank { null },
     hasAttachments = !files.isNullOrEmpty(),
 )
 
-internal fun GasRecord.toRow(): RecordRow = RecordRow(
+internal fun GasRecord.toRow(unit: String): RecordRow = RecordRow(
     id = id?.toString() ?: "",
     title = buildString {
         append(fuelConsumed?.let { String.format("%,.2f units", it) } ?: "Fuel-up")
@@ -48,13 +48,13 @@ internal fun GasRecord.toRow(): RecordRow = RecordRow(
     subtitle = notes?.ifBlank { null }
         ?: fuelEconomy?.let { String.format("%.1f economy", it) },
     trailing = money(cost),
-    meta = listOfNotNull(date, odo(odometer)).joinToString(" · ").ifBlank { null },
+    meta = listOfNotNull(date, odo(odometer, unit)).joinToString(" · ").ifBlank { null },
     hasAttachments = !files.isNullOrEmpty(),
 )
 
-internal fun OdometerRecord.toRow(): RecordRow = RecordRow(
+internal fun OdometerRecord.toRow(unit: String): RecordRow = RecordRow(
     id = id?.toString() ?: "",
-    title = odo(odometer) ?: "Odometer reading",
+    title = odo(odometer, unit) ?: "Odometer reading",
     subtitle = notes?.ifBlank { null },
     trailing = null,
     meta = date,
@@ -83,7 +83,7 @@ internal fun SupplyRecord.toRow(): RecordRow = RecordRow(
     hasAttachments = !files.isNullOrEmpty(),
 )
 
-internal fun ReminderRecord.toRow(): RecordRow = RecordRow(
+internal fun ReminderRecord.toRow(unit: String): RecordRow = RecordRow(
     id = id?.toString() ?: "",
     title = description?.ifBlank { "(reminder)" } ?: "(reminder)",
     subtitle = listOfNotNull(
@@ -93,7 +93,7 @@ internal fun ReminderRecord.toRow(): RecordRow = RecordRow(
     trailing = urgency,
     meta = listOfNotNull(
         dueDate?.let { "due $it" },
-        dueOdometer?.let { "at ${odo(it)}" },
+        dueOdometer?.let { "at ${odo(it, unit)}" },
     ).joinToString(" · ").ifBlank { null },
 )
 
@@ -127,11 +127,11 @@ internal fun GasRecord.toActivity(name: (Long?) -> String): ActivityItem = Activ
     cost = cost,
 )
 
-internal fun OdometerRecord.toActivity(name: (Long?) -> String): ActivityItem = ActivityItem(
+internal fun OdometerRecord.toActivity(unit: String, name: (Long?) -> String): ActivityItem = ActivityItem(
     area = RecordArea.ODOMETER,
     vehicleId = vehicleId,
     vehicleName = name(vehicleId),
-    title = odo(odometer) ?: "Odometer reading",
+    title = odo(odometer, unit) ?: "Odometer reading",
     date = date,
     cost = null,
 )

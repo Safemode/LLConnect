@@ -57,6 +57,7 @@ class SettingsViewModel : ViewModel() {
         viewModelScope.launch {
             val merged = settings.config.first().copy(
                 fuelEconomyUnit = updated.fuelEconomyUnit,
+                distanceUnit = updated.distanceUnit,
                 recordSortOrder = updated.recordSortOrder,
                 cacheSize = updated.cacheSize,
                 themePreference = updated.themePreference,

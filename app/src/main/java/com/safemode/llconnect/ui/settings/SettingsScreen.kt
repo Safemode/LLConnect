@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.safemode.llconnect.data.settings.CacheSize
+import com.safemode.llconnect.data.settings.DistanceUnit
 import com.safemode.llconnect.data.settings.FuelEconomyUnit
 import com.safemode.llconnect.data.settings.RecordSortOrder
 import com.safemode.llconnect.data.settings.ThemePreference
@@ -105,6 +106,31 @@ fun SettingsScreen(
                             FilterChip(
                                 selected = config.fuelEconomyUnit == unit,
                                 onClick = { viewModel.updateAndSave { it.copy(fuelEconomyUnit = unit) } },
+                                label = { Text(unit.label) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ---- Distance unit card ----
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Distance unit", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "How odometer readings are labeled throughout the app. LubeLogger " +
+                            "doesn't report a unit, so this is a display choice only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DistanceUnit.entries.forEach { unit ->
+                            FilterChip(
+                                selected = config.distanceUnit == unit,
+                                onClick = { viewModel.updateAndSave { it.copy(distanceUnit = unit) } },
                                 label = { Text(unit.label) },
                             )
                         }

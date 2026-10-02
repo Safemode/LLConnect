@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -56,6 +57,7 @@ import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
 import com.safemode.llconnect.data.remote.models.TaxRecordRequest
 import com.safemode.llconnect.ui.common.DateField
 import com.safemode.llconnect.ui.common.DropdownField
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -104,6 +106,11 @@ fun RecordFormScreen(
     val area = remember(areaName) { recordAreaFromName(areaName) }
     val isEdit = recordId.isNotBlank()
     val scope = rememberCoroutineScope()
+
+    // Display-only odometer unit label (e.g. "mi"), from the Distance unit setting.
+    val distanceUnit by Graph.settingsRepository.config
+        .map { it.distanceUnit.suffix }
+        .collectAsStateWithLifecycle(initialValue = Graph.apiProvider.currentConfig().distanceUnit.suffix)
 
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var odometer by remember { mutableStateOf("") }
@@ -264,7 +271,7 @@ fun RecordFormScreen(
                     OutlinedTextField(
                         value = initialOdometer,
                         onValueChange = { initialOdometer = it.filter(Char::isDigit) },
-                        label = { Text("Initial odometer") },
+                        label = { Text("Initial odometer ($distanceUnit)") },
                         singleLine = true,
                         // Disabled (grayed) while locked, so it's clearly read-only; the edit
                         // toggle beside it unlocks editing.
@@ -290,7 +297,7 @@ fun RecordFormScreen(
                 OutlinedTextField(
                     value = odometer,
                     onValueChange = { odometer = it.filter(Char::isDigit) },
-                    label = { Text("Odometer") },
+                    label = { Text("Odometer ($distanceUnit)") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -348,7 +355,7 @@ fun RecordFormScreen(
                     OutlinedTextField(
                         value = dueOdometer,
                         onValueChange = { dueOdometer = it.filter(Char::isDigit) },
-                        label = { Text("Due odometer") },
+                        label = { Text("Due odometer ($distanceUnit)") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
