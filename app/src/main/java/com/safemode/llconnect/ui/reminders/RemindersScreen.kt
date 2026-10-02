@@ -27,11 +27,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.ReminderItem
 import com.safemode.llconnect.ui.common.EmptyState
 import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
 import com.safemode.llconnect.ui.common.UiState
+import kotlinx.coroutines.flow.map
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +42,9 @@ fun RemindersScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val distanceUnit by Graph.settingsRepository.config
+        .map { it.distanceUnit.suffix }
+        .collectAsStateWithLifecycle(initialValue = Graph.apiProvider.currentConfig().distanceUnit.suffix)
 
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
@@ -64,7 +69,7 @@ fun RemindersScreen(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(s.data) { item -> ReminderCard(item) }
+                        items(s.data) { item -> ReminderCard(item, distanceUnit) }
                     }
                 }
             }
@@ -73,7 +78,7 @@ fun RemindersScreen(
 }
 
 @Composable
-private fun ReminderCard(item: ReminderItem) {
+private fun ReminderCard(item: ReminderItem, distanceUnit: String) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -92,7 +97,7 @@ private fun ReminderCard(item: ReminderItem) {
                 )
                 val due = listOfNotNull(
                     item.dueDate?.takeIf { it.isNotBlank() }?.let { "Due $it" },
-                    item.dueOdometer?.let { "at ${"%,d".format(it)}" },
+                    item.dueOdometer?.let { "at ${"%,d".format(it)} $distanceUnit" },
                 ).joinToString(" · ")
                 if (due.isNotBlank()) {
                     Text(
