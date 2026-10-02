@@ -75,6 +75,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.min
 
+/** How long the detected boundary box lingers after detection drops out, to avoid flicker. */
+private const val BOX_HOLD_MS = 500L
+
 /**
  * Camera screen that captures a receipt, flattens it with OpenCV document detection, and hands
  * the compressed JPEG back to the caller as a cache file path via [onResult].
@@ -143,6 +146,9 @@ fun ScanReceiptScreen(
     var review by remember { mutableStateOf<Bitmap?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Timestamp of the last successful detection, so the box stays put through brief misses
+    // instead of flickering on and off frame to frame.
+    val lastHit = remember { longArrayOf(0L) }
 
     DisposableEffect(Unit) {
         onDispose { analysisExecutor.shutdown() }
@@ -153,9 +159,23 @@ fun ScanReceiptScreen(
         imageAnalysis.setAnalyzer(analysisExecutor) { proxy ->
             try {
                 val upright = rotate(proxy.toBitmap(), proxy.imageInfo.rotationDegrees)
-                quad = DocumentDetector.detectQuad(upright)
-                frameW = upright.width
-                frameH = upright.height
+                val detected = DocumentDetector.detectQuad(upright)
+                val now = System.currentTimeMillis()
+                if (detected != null) {
+                    frameW = upright.width
+                    frameH = upright.height
+                    // Exponential smoothing against the previous box to damp corner wobble.
+                    val prev = quad
+                    quad = if (prev != null && prev.size == 8) {
+                        FloatArray(8) { i -> prev[i] * 0.5f + detected[i] * 0.5f }
+                    } else {
+                        detected
+                    }
+                    lastHit[0] = now
+                } else if (now - lastHit[0] > BOX_HOLD_MS) {
+                    // Only drop the box once detection has been missing for a short grace period.
+                    quad = null
+                }
             } catch (_: Throwable) {
                 // Skip this frame; detection resumes on the next one.
             } finally {
