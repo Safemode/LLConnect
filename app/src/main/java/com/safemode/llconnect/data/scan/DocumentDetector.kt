@@ -40,6 +40,47 @@ object DocumentDetector {
         }
     }
 
+    /**
+     * Detects the document quad in [source] and returns its ordered corners
+     * (top-left, top-right, bottom-right, bottom-left) as [x0,y0,x1,y1,x2,y2,x3,y3] in the
+     * bitmap's coordinate space, or null when none is found. Used for the live preview overlay.
+     */
+    fun detectQuad(source: Bitmap): FloatArray? {
+        if (!available) return null
+        val rgba = Mat()
+        val safeSource = if (source.config == Bitmap.Config.ARGB_8888) source
+        else source.copy(Bitmap.Config.ARGB_8888, false)
+        Utils.bitmapToMat(safeSource, rgba)
+        try {
+            val quad = findDocumentQuad(rgba) ?: return null
+            val ordered = orderCorners(quad)
+            return FloatArray(8) { i ->
+                if (i % 2 == 0) ordered[i / 2].x.toFloat() else ordered[i / 2].y.toFloat()
+            }
+        } finally {
+            rgba.release()
+        }
+    }
+
+    /**
+     * Flattens [source] using a caller-supplied set of already-ordered corners (as produced by
+     * [detectQuad], scaled into [source]'s coordinate space). Returns null if OpenCV is
+     * unavailable or the corner array is malformed.
+     */
+    fun flattenWithQuad(source: Bitmap, orderedQuad: FloatArray): Bitmap? {
+        if (!available || orderedQuad.size != 8) return null
+        val rgba = Mat()
+        val safeSource = if (source.config == Bitmap.Config.ARGB_8888) source
+        else source.copy(Bitmap.Config.ARGB_8888, false)
+        Utils.bitmapToMat(safeSource, rgba)
+        try {
+            val ordered = Array(4) { Point(orderedQuad[it * 2].toDouble(), orderedQuad[it * 2 + 1].toDouble()) }
+            return warpOrdered(rgba, ordered)
+        } finally {
+            rgba.release()
+        }
+    }
+
     /** Locates the best 4-corner convex contour, returned as full-resolution corner points. */
     private fun findDocumentQuad(rgba: Mat): Array<Point>? {
         // Detect on a downscaled copy for speed and noise tolerance, then scale points back up.
@@ -89,9 +130,13 @@ object DocumentDetector {
         return best?.map { Point(it.x / scale, it.y / scale) }?.toTypedArray()
     }
 
-    /** Warps the quad to a front-on rectangle sized from its own edge lengths. */
-    private fun warpToBitmap(rgba: Mat, quad: Array<Point>): Bitmap {
-        val (tl, tr, br, bl) = orderCorners(quad)
+    /** Orders the quad's corners, then warps it to a front-on rectangle. */
+    private fun warpToBitmap(rgba: Mat, quad: Array<Point>): Bitmap =
+        warpOrdered(rgba, orderCorners(quad))
+
+    /** Warps already-ordered corners (TL, TR, BR, BL) to a rectangle sized from their edge lengths. */
+    private fun warpOrdered(rgba: Mat, ordered: Array<Point>): Bitmap {
+        val (tl, tr, br, bl) = ordered
         val widthTop = dist(tl, tr)
         val widthBottom = dist(bl, br)
         val heightLeft = dist(tl, bl)
