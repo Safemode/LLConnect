@@ -13,13 +13,25 @@ android {
         applicationId = "com.safemode.llconnect"
         minSdk = 24
         targetSdk = 37
-        versionCode = 5
-        versionName = "1.2.1"
+        versionCode = 6
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // OpenCV ships large native libraries per ABI. The shipped (release) APK carries only
+        // the two ARM ABIs real devices use; debug additionally includes x86_64 for the emulator
+        // (see buildTypes below). This keeps the released APK from ballooning.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
+        debug {
+            ndk {
+                abiFilters += "x86_64"
+            }
+        }
         release {
             optimization {
                 enable = false
@@ -80,6 +92,13 @@ dependencies {
 
     // Images
     implementation(libs.coil.compose)
+
+    // Camera + document scanning (no Google Play Services)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.opencv)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 

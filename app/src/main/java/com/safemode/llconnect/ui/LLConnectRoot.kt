@@ -82,10 +82,9 @@ fun LLConnectRoot() {
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
     // Back gesture handling:
-    // 1. If the drawer is open, back closes it first.
-    BackHandler(enabled = drawerState.isOpen) {
-        scope.launch { drawerState.close() }
-    }
+    // 1. If the drawer is open, back closes it first. This handler is registered after the NavHost
+    //    (below) so it wins over the NavHost's own back callback, which would otherwise pop the
+    //    back stack instead (OnBackPressedDispatcher invokes the most recently added callback).
     // 2. On the start destination, require a second back press within 2s to exit.
     val context = LocalContext.current
     var lastBackPress by remember { mutableLongStateOf(0L) }
@@ -267,6 +266,11 @@ fun LLConnectRoot() {
             composable(Routes.SETTINGS) {
                 SettingsScreen()
             }
+            }
+            // Registered after the NavHost (see note above) so an open drawer closes on back
+            // before the NavHost pops the back stack.
+            BackHandler(enabled = drawerState.isOpen) {
+                scope.launch { drawerState.close() }
             }
         }
     }
