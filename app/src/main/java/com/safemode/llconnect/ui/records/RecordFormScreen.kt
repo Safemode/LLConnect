@@ -245,7 +245,8 @@ fun RecordFormScreen(
                     if (bytes == null) {
                         error = "Couldn't read the scanned image."
                     } else {
-                        Graph.repository.uploadDocument(file.name, "image/jpeg", bytes).fold(
+                        val name = receiptFileName(date, area, odometer)
+                        Graph.repository.uploadDocument(name, "image/jpeg", bytes).fold(
                             onSuccess = { attachments = attachments + it },
                             onFailure = { error = it.message ?: "Receipt upload failed." },
                         )
@@ -621,6 +622,20 @@ private fun ReceiptSection(
             }
         }
     }
+}
+
+/**
+ * Builds the scanned receipt's filename from the record's own fields:
+ * `date_recordtype_odometer_receipt.jpg` when an odometer reading is present (e.g.
+ * 2026-10-02_service_22148_receipt.jpg), or `date_recordtype_receipt.jpg` when it isn't (e.g. a
+ * scan taken before the form is filled in). The date falls back to today when the field is blank.
+ */
+private fun receiptFileName(date: String, area: RecordArea, odometer: String): String {
+    val datePart = date.ifBlank { LocalDate.now().toString() }
+    val type = area.name.lowercase()
+    val odo = odometer.trim()
+    return if (odo.isNotBlank()) "${datePart}_${type}_${odo}_receipt.jpg"
+    else "${datePart}_${type}_receipt.jpg"
 }
 
 private suspend fun submit(
