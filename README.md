@@ -19,9 +19,12 @@ that would give me easy access to my LubeLogger instance.
 3. Tap **Save & test connection** to persist the details and verify them against `/api/whoami`;
    the signed-in identity and server version appear below.
 
-App preferences (theme, fuel-economy units, record-list order) live separately under **Settings**
-and save the moment you change them. The theme offers System / Light / Dark / Midnight, where
-Midnight is a dark theme with pure-black surfaces for OLED screens.
+App preferences (theme, fuel-economy units, distance unit, record-list order) live separately under
+**Settings** and save the moment you change them. The theme offers System / Light / Dark / Midnight,
+where Midnight is a dark theme with pure-black surfaces for OLED screens. The distance unit
+(Miles or Kilometers) sets how odometer readings are labeled throughout the app — in record lists,
+reminders, and the odometer fields on the record form — since LubeLogger's API reports odometer
+values without a unit.
 
 Self-hosted instances are often reached over plain HTTP on a LAN address, so cleartext
 traffic is enabled in the manifest.
@@ -78,6 +81,19 @@ manager — **view/open, upload, rename, and delete** — reachable from the pap
 on each record. Uploads use `/api/documents/upload`; view downloads the file through the
 authenticated client and opens it with an external viewer via a `FileProvider`.
 
+### Receipt scanning
+
+The add/edit form carries a **Scan receipt** button on every area that supports attachments,
+for capturing a receipt or document and attaching it to that record in one step. Capture runs
+in-app with CameraX, and on-device document detection (OpenCV) draws a live boundary box over
+the preview so you can see what will be captured; the still is then cropped and
+perspective-corrected to that box for a flattened, scanned look. The image is downscaled and
+JPEG-compressed before upload to keep server storage small, and named from the record's own
+details — `date_recordtype_odometer_receipt.jpg` when an odometer reading is present (e.g.
+`2026-10-02_service_22148_receipt.jpg`), or `date_recordtype_receipt.jpg` otherwise. Detection
+and processing are entirely on-device, with no Google Play Services dependency. (Bundling the
+OpenCV native libraries makes the APK noticeably larger than earlier releases.)
+
 ### Vehicle dashboard
 
 Opening a vehicle shows a dashboard with a hero-image header (loaded through the
@@ -106,9 +122,10 @@ vehicle, skipping the vehicle → area navigation.
 The drawer holds the primary destinations (Dashboard, Vehicles, and the garage-wide views
 below) at the top, with Tools, Server, About, and Settings pinned to the bottom. **Server**
 holds the connection, authentication, and culture-invariant settings plus the live
-signed-in/version info; **Settings** holds app preferences (theme, fuel-economy units, record-list
-order). Swipe from the left edge to open the drawer; on the dashboard, a second back press
-within two seconds exits the app (a first press closes the drawer if it's open).
+signed-in/version info; **Settings** holds app preferences (theme, fuel-economy units, distance
+unit, record-list order). Swipe from the left edge to open the drawer; while it's open, back
+closes it first (on any screen) rather than navigating away. On the dashboard with the drawer
+closed, a second back press within two seconds exits the app.
 
 ### Garage-wide views
 
