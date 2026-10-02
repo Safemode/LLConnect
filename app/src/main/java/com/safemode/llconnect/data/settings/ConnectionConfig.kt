@@ -9,6 +9,15 @@ enum class FuelEconomyUnit(val label: String) {
     UK_MPG("UK MPG"),
 }
 
+/**
+ * Distance unit used to label odometer readings. LubeLogger's API returns odometer values
+ * as unitless numbers, so this is purely a display choice applied app-side.
+ */
+enum class DistanceUnit(val label: String, val suffix: String) {
+    MILES("Miles", "mi"),
+    KILOMETERS("Kilometers", "km"),
+}
+
 /** Order for chronological record lists (odometer, service, gas, …). */
 enum class RecordSortOrder(val label: String) {
     OLDEST_FIRST("Oldest first"),
@@ -43,6 +52,7 @@ data class ConnectionConfig(
     val basicPassword: String = "",
     val cultureInvariant: Boolean = true,
     val fuelEconomyUnit: FuelEconomyUnit = FuelEconomyUnit.DEFAULT,
+    val distanceUnit: DistanceUnit = DistanceUnit.MILES,
     val recordSortOrder: RecordSortOrder = RecordSortOrder.OLDEST_FIRST,
     val cacheSize: CacheSize = CacheSize.MB_50,
     val themePreference: ThemePreference = ThemePreference.SYSTEM,

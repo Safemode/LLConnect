@@ -29,6 +29,7 @@ class SettingsRepository(private val context: Context) {
         val BASIC_PASS = stringPreferencesKey("basic_pass")
         val CULTURE_INVARIANT = booleanPreferencesKey("culture_invariant")
         val FUEL_UNIT = stringPreferencesKey("fuel_unit")
+        val DISTANCE_UNIT = stringPreferencesKey("distance_unit")
         val SORT_ORDER = stringPreferencesKey("record_sort_order")
         val CACHE_SIZE = stringPreferencesKey("cache_size")
         val THEME = stringPreferencesKey("theme_preference")
@@ -49,6 +50,9 @@ class SettingsRepository(private val context: Context) {
             fuelEconomyUnit = runCatching {
                 FuelEconomyUnit.valueOf(prefs[Keys.FUEL_UNIT] ?: "DEFAULT")
             }.getOrDefault(FuelEconomyUnit.DEFAULT),
+            distanceUnit = runCatching {
+                DistanceUnit.valueOf(prefs[Keys.DISTANCE_UNIT] ?: "MILES")
+            }.getOrDefault(DistanceUnit.MILES),
             recordSortOrder = runCatching {
                 RecordSortOrder.valueOf(prefs[Keys.SORT_ORDER] ?: "OLDEST_FIRST")
             }.getOrDefault(RecordSortOrder.OLDEST_FIRST),
@@ -73,6 +77,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BASIC_PASS] = KeystoreCrypto.encrypt(config.basicPassword)
             prefs[Keys.CULTURE_INVARIANT] = config.cultureInvariant
             prefs[Keys.FUEL_UNIT] = config.fuelEconomyUnit.name
+            prefs[Keys.DISTANCE_UNIT] = config.distanceUnit.name
             prefs[Keys.SORT_ORDER] = config.recordSortOrder.name
             prefs[Keys.CACHE_SIZE] = config.cacheSize.name
             prefs[Keys.THEME] = config.themePreference.name
