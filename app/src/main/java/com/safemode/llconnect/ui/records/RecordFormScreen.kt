@@ -15,7 +15,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -23,6 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -59,6 +62,7 @@ import com.safemode.llconnect.ui.common.DateField
 import com.safemode.llconnect.ui.common.DropdownField
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.File
 import java.time.LocalDate
 
 private val PlanTypes = listOf("ServiceRecord", "RepairRecord", "UpgradeRecord")
@@ -102,6 +106,9 @@ fun RecordFormScreen(
     recordId: String,
     onBack: () -> Unit,
     onAttachments: (String) -> Unit,
+    onScanReceipt: () -> Unit = {},
+    scannedReceiptPath: String? = null,
+    onScannedReceiptConsumed: () -> Unit = {},
 ) {
     val area = remember(areaName) { recordAreaFromName(areaName) }
     val isEdit = recordId.isNotBlank()
@@ -152,6 +159,7 @@ fun RecordFormScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var scanUploading by remember { mutableStateOf(false) }
 
     // In edit mode, fetch the existing record and pre-fill the fields.
     LaunchedEffect(recordId) {
@@ -194,6 +202,26 @@ fun RecordFormScreen(
                 loading = false
             },
         )
+    }
+
+    // A freshly scanned receipt arrives as a cache file path; upload it and attach it here.
+    LaunchedEffect(scannedReceiptPath) {
+        val path = scannedReceiptPath ?: return@LaunchedEffect
+        scanUploading = true
+        error = null
+        val file = File(path)
+        val bytes = runCatching { file.readBytes() }.getOrNull()
+        if (bytes == null) {
+            error = "Couldn't read the scanned image."
+        } else {
+            Graph.repository.uploadDocument(file.name, "image/jpeg", bytes).fold(
+                onSuccess = { attachments = attachments + it },
+                onFailure = { error = it.message ?: "Receipt upload failed." },
+            )
+            runCatching { file.delete() }
+        }
+        scanUploading = false
+        onScannedReceiptConsumed()
     }
 
     // New odometer record: carry the previous entry's reading over as the initial odometer.
@@ -375,6 +403,12 @@ fun RecordFormScreen(
                 )
                 ToggleRow("Fill to full", isFillToFull) { isFillToFull = it }
                 ToggleRow("Missed a previous fuel-up", missedFuelUp) { missedFuelUp = it }
+                ReceiptSection(
+                    attachments = attachments,
+                    uploading = scanUploading,
+                    onScan = onScanReceipt,
+                    onRemove = { file -> attachments = attachments - file },
+                )
             }
 
             if (showCost) {
@@ -525,6 +559,54 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge)
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+/**
+ * "Scan receipt" control plus the list of attachments on this record, each removable. The scan
+ * launches the OpenCV document scanner; the resulting image is uploaded and added to [attachments].
+ */
+@Composable
+private fun ReceiptSection(
+    attachments: List<FileAttachment>,
+    uploading: Boolean,
+    onScan: () -> Unit,
+    onRemove: (FileAttachment) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedButton(
+            onClick = onScan,
+            enabled = !uploading,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (uploading) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp))
+            } else {
+                Icon(Icons.Filled.DocumentScanner, contentDescription = null)
+                Text("  Scan receipt")
+            }
+        }
+        attachments.forEach { file ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    Icons.Filled.AttachFile,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = file.name?.ifBlank { null } ?: "Attachment",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                )
+                IconButton(onClick = { onRemove(file) }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Remove ${file.name}")
+                }
+            }
+        }
     }
 }
 

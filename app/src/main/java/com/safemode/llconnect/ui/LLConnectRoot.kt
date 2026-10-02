@@ -59,6 +59,7 @@ import com.safemode.llconnect.ui.records.RecordFormScreen
 import com.safemode.llconnect.ui.records.RecordsScreen
 import com.safemode.llconnect.ui.reminders.RemindersScreen
 import com.safemode.llconnect.ui.reports.ReportsScreen
+import com.safemode.llconnect.ui.scan.ScanReceiptScreen
 import com.safemode.llconnect.ui.server.ServerInfoScreen
 import com.safemode.llconnect.ui.settings.SettingsScreen
 import com.safemode.llconnect.ui.tools.ToolsScreen
@@ -66,6 +67,9 @@ import com.safemode.llconnect.ui.vehicles.VehicleDetailScreen
 import com.safemode.llconnect.ui.vehicles.VehicleFormScreen
 import com.safemode.llconnect.ui.vehicles.VehiclesScreen
 import kotlinx.coroutines.launch
+
+/** savedStateHandle key the receipt scanner uses to hand a scanned image path back to the form. */
+private const val SCANNED_RECEIPT_KEY = "scanned_receipt_path"
 
 @Composable
 fun LLConnectRoot() {
@@ -218,6 +222,9 @@ fun LLConnectRoot() {
                 val vehicleId = entry.arguments?.getString("vehicleId").orEmpty()
                 val area = entry.arguments?.getString("area").orEmpty()
                 val recordId = entry.arguments?.getString("recordId").orEmpty()
+                val scannedReceiptPath by entry.savedStateHandle
+                    .getStateFlow<String?>(SCANNED_RECEIPT_KEY, null)
+                    .collectAsStateWithLifecycle()
                 RecordFormScreen(
                     vehicleId = vehicleId,
                     areaName = area,
@@ -225,6 +232,21 @@ fun LLConnectRoot() {
                     onBack = { navController.popBackStack() },
                     onAttachments = { rid ->
                         navController.navigate(Routes.attachments(vehicleId, area, rid))
+                    },
+                    onScanReceipt = { navController.navigate(Routes.SCAN_RECEIPT) },
+                    scannedReceiptPath = scannedReceiptPath,
+                    onScannedReceiptConsumed = {
+                        entry.savedStateHandle[SCANNED_RECEIPT_KEY] = null
+                    },
+                )
+            }
+            composable(Routes.SCAN_RECEIPT) {
+                ScanReceiptScreen(
+                    onBack = { navController.popBackStack() },
+                    onResult = { path ->
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle?.set(SCANNED_RECEIPT_KEY, path)
+                        navController.popBackStack()
                     },
                 )
             }
