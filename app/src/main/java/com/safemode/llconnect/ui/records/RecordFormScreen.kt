@@ -113,9 +113,10 @@ fun RecordFormScreen(
     val isEdit = recordId.isNotBlank()
     val scope = rememberCoroutineScope()
 
-    // Display-only odometer unit label (e.g. "mi"), from the Distance unit setting.
-    val distanceUnit by Graph.settingsRepository.config
-        .map { it.distanceUnit.suffix }
+    // Display-only odometer unit label (e.g. "mi"), from the Distance unit setting. The mapped
+    // flow is remembered so it's built once, not rebuilt on every recomposition.
+    val distanceUnitFlow = remember { Graph.settingsRepository.config.map { it.distanceUnit.suffix } }
+    val distanceUnit by distanceUnitFlow
         .collectAsStateWithLifecycle(initialValue = Graph.apiProvider.currentConfig().distanceUnit.suffix)
 
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
@@ -245,7 +246,7 @@ fun RecordFormScreen(
                     if (bytes == null) {
                         error = "Couldn't read the scanned image."
                     } else {
-                        val name = receiptFileName(date, area, odometer)
+                        val name = receiptFileName(date, area, odometer, attachments)
                         Graph.repository.uploadDocument(name, "image/jpeg", bytes).fold(
                             onSuccess = { attachments = attachments + it },
                             onFailure = { error = it.message ?: "Receipt upload failed." },
@@ -629,13 +630,30 @@ private fun ReceiptSection(
  * `date_recordtype_odometer_receipt.jpg` when an odometer reading is present (e.g.
  * 2026-10-02_service_22148_receipt.jpg), or `date_recordtype_receipt.jpg` when it isn't (e.g. a
  * scan taken before the form is filled in). The date falls back to today when the field is blank.
+ *
+ * When a record already carries an attachment with that name — multiple receipts scanned onto the
+ * same record share every field above — a numeric suffix is appended (`..._receipt_2.jpg`,
+ * `..._receipt_3.jpg`, ...) so each upload keeps a distinct name instead of colliding.
  */
-private fun receiptFileName(date: String, area: RecordArea, odometer: String): String {
+private fun receiptFileName(
+    date: String,
+    area: RecordArea,
+    odometer: String,
+    existing: List<FileAttachment>,
+): String {
     val datePart = date.ifBlank { LocalDate.now().toString() }
     val type = area.name.lowercase()
     val odo = odometer.trim()
-    return if (odo.isNotBlank()) "${datePart}_${type}_${odo}_receipt.jpg"
-    else "${datePart}_${type}_receipt.jpg"
+    val base = if (odo.isNotBlank()) "${datePart}_${type}_${odo}_receipt"
+    else "${datePart}_${type}_receipt"
+    val taken = existing.mapNotNull { it.name?.lowercase() }.toSet()
+    var candidate = "$base.jpg"
+    var n = 2
+    while (candidate.lowercase() in taken) {
+        candidate = "${base}_$n.jpg"
+        n++
+    }
+    return candidate
 }
 
 private suspend fun submit(
