@@ -50,6 +50,19 @@ class ApiProvider(
         .add(KotlinJsonAdapterFactory())
         .build()
 
+    /**
+     * A single long-lived client for reachability probes, reused across every probe so we don't
+     * allocate a fresh dispatcher/connection pool on each check. It reads auth from the latest
+     * [config] per request, so it never needs rebuilding when host/credentials change.
+     */
+    private val probeClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .addInterceptor(AuthInterceptor { config })
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .build()
+    }
+
     fun updateConfig(newConfig: ConnectionConfig) {
         val sizeChanged = newConfig.cacheSize != config.cacheSize
         config = newConfig
@@ -78,11 +91,6 @@ class ApiProvider(
         val request = Request.Builder()
             .url(cfg.baseUrl() + "api/whoami")
             .get()
-            .build()
-        val probeClient = OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor { config })
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
             .build()
         return try {
             probeClient.newCall(request).execute().use { true }
