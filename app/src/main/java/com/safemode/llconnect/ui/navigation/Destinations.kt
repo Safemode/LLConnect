@@ -2,6 +2,7 @@ package com.safemode.llconnect.ui.navigation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Dashboard
@@ -22,6 +23,7 @@ object Routes {
     const val ABOUT = "about"
     const val SERVER = "server"
     const val SETTINGS = "settings"
+    const val QUEUE = "queue"
 
     fun vehicleDetail(vehicleId: String) = "vehicle/$vehicleId"
     const val VEHICLE_DETAIL = "vehicle/{vehicleId}"
@@ -50,6 +52,7 @@ enum class TopDestination(val route: String, val label: String, val icon: ImageV
     REMINDERS(Routes.REMINDERS, "Reminders", Icons.Filled.NotificationsActive),
     HISTORY(Routes.HISTORY, "History", Icons.Filled.History),
     REPORTS(Routes.REPORTS, "Reports", Icons.Filled.Assessment),
+    QUEUE(Routes.QUEUE, "Queue", Icons.Filled.CloudUpload),
     TOOLS(Routes.TOOLS, "Tools", Icons.Filled.Construction),
     SERVER(Routes.SERVER, "Server", Icons.Filled.Dns),
     ABOUT(Routes.ABOUT, "About", Icons.Filled.Info),

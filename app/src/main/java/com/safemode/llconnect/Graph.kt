@@ -2,6 +2,7 @@ package com.safemode.llconnect
 
 import android.content.Context
 import com.safemode.llconnect.data.LubeLoggerRepository
+import com.safemode.llconnect.data.queue.OfflineQueue
 import com.safemode.llconnect.data.remote.ApiProvider
 import com.safemode.llconnect.data.remote.NetworkMonitor
 import com.safemode.llconnect.data.remote.ServerStatus
@@ -36,6 +37,9 @@ object Graph {
     lateinit var serverStatus: ServerStatus
         private set
 
+    lateinit var offlineQueue: OfflineQueue
+        private set
+
     private lateinit var networkMonitor: NetworkMonitor
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -47,6 +51,7 @@ object Graph {
         networkMonitor = NetworkMonitor(app, serverStatus)
         apiProvider = ApiProvider(app.cacheDir, serverStatus, networkMonitor::isOnline)
         repository = LubeLoggerRepository(apiProvider)
+        offlineQueue = OfflineQueue(app.filesDir, serverStatus, repository, appScope)
 
         // Keep the API provider's config in sync with saved settings.
         settingsRepository.config
@@ -66,6 +71,20 @@ object Graph {
         appScope.launch {
             ProcessLifecycleOwner.get().lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 runReachabilityLoop()
+            }
+        }
+
+        // Flush the offline queue whenever the server becomes reachable (at launch, or after it
+        // comes back). Gated to the foreground like the probe, so it never runs network work in the
+        // background. flush() guards itself against re-entrancy, so a status flip caused by its own
+        // calls can't start a second flush.
+        appScope.launch {
+            ProcessLifecycleOwner.get().lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // StateFlow already de-duplicates, so collect directly; flush() no-ops unless the
+                // server is reachable and the queue is non-empty.
+                serverStatus.state.collect { state ->
+                    if (state == ServerReachability.REACHABLE) offlineQueue.flush()
+                }
             }
         }
     }

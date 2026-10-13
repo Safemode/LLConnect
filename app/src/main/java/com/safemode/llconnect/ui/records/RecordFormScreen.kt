@@ -1,5 +1,6 @@
 package com.safemode.llconnect.ui.records
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,10 +45,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.RecordArea
+import com.safemode.llconnect.data.queue.QueuedAttachment
+import com.safemode.llconnect.data.queue.QueuedFields
 import com.safemode.llconnect.data.remote.models.ExtraField
 import com.safemode.llconnect.data.remote.models.FileAttachment
 import com.safemode.llconnect.data.remote.models.EquipmentRecordRequest
@@ -112,6 +116,7 @@ fun RecordFormScreen(
     val area = remember(areaName) { recordAreaFromName(areaName) }
     val isEdit = recordId.isNotBlank()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     // Display-only odometer unit label (e.g. "mi"), from the Distance unit setting. The mapped
     // flow is remembered so it's built once, not rebuilt on every recomposition.
@@ -153,6 +158,11 @@ fun RecordFormScreen(
     // Not user-editable here, but preserved so an update doesn't wipe them server-side.
     var attachments by remember { mutableStateOf<List<FileAttachment>>(emptyList()) }
     var extraFields by remember { mutableStateOf<List<ExtraField>?>(null) }
+    // Receipts scanned while the server is unreachable: held locally (staged) and uploaded with
+    // the record when it's flushed from the offline queue. Only used for new records.
+    var pendingImages by remember { mutableStateOf<List<QueuedAttachment>>(emptyList()) }
+    // Snapshot of the vehicle's name, so a queued entry reads well even while the server is down.
+    var vehicleName by remember { mutableStateOf("") }
 
     var loading by remember { mutableStateOf(isEdit) }
     var submitting by remember { mutableStateOf(false) }
@@ -205,6 +215,13 @@ fun RecordFormScreen(
         )
     }
 
+    // Vehicle name for queued-entry display. Reads from cache when the server is unreachable.
+    LaunchedEffect(vehicleId) {
+        Graph.repository.getVehicleById(vehicleId).onSuccess { v ->
+            v?.displayName?.let { if (it.isNotBlank()) vehicleName = it }
+        }
+    }
+
     // New odometer record: carry the previous entry's reading over as the initial odometer.
     LaunchedEffect(area, isEdit) {
         if (isEdit || area != RecordArea.ODOMETER) return@LaunchedEffect
@@ -246,11 +263,23 @@ fun RecordFormScreen(
                     if (bytes == null) {
                         error = "Couldn't read the scanned image."
                     } else {
-                        val name = receiptFileName(date, area, odometer, attachments)
-                        Graph.repository.uploadDocument(name, "image/jpeg", bytes).fold(
-                            onSuccess = { attachments = attachments + it },
-                            onFailure = { error = it.message ?: "Receipt upload failed." },
-                        )
+                        val taken = (attachments.mapNotNull { it.name } + pendingImages.map { it.fileName })
+                            .map { it.lowercase() }.toSet()
+                        val name = receiptFileName(date, area, odometer, taken)
+                        if (Graph.serverStatus.isReachable()) {
+                            Graph.repository.uploadDocument(name, "image/jpeg", bytes).fold(
+                                onSuccess = { attachments = attachments + it },
+                                onFailure = {
+                                    // Likely just lost the server — stage it locally so it uploads
+                                    // with the record once it flushes from the queue.
+                                    pendingImages = pendingImages +
+                                        Graph.offlineQueue.stageImage(bytes, name, "image/jpeg")
+                                },
+                            )
+                        } else {
+                            pendingImages = pendingImages +
+                                Graph.offlineQueue.stageImage(bytes, name, "image/jpeg")
+                        }
                         runCatching { file.delete() }
                     }
                     scanUploading = false
@@ -464,9 +493,14 @@ fun RecordFormScreen(
             if (area.supportsAttachments) {
                 ReceiptSection(
                     attachments = attachments,
+                    pending = pendingImages,
                     uploading = scanUploading,
                     onScan = { scanning = true },
                     onRemove = { file -> attachments = attachments - file },
+                    onRemovePending = { p ->
+                        pendingImages = pendingImages - p
+                        scope.launch { Graph.offlineQueue.discardStaged(p) }
+                    },
                 )
             }
 
@@ -479,44 +513,109 @@ fun RecordFormScreen(
                     error = null
                     submitting = true
                     scope.launch {
-                        val result = submit(
-                            area = area,
-                            vehicleId = vehicleId,
-                            id = recordId.toLongOrNull().takeIf { isEdit },
-                            values = FormValues(
-                                date = date,
-                                odometer = odometer.toLongOrNull(),
-                                initialOdometer = initialOdometer.toLongOrNull(),
-                                description = description.ifBlank { null },
-                                cost = cost.toDoubleOrNull(),
-                                fuelConsumed = fuelConsumed.toDoubleOrNull(),
-                                isFillToFull = isFillToFull,
-                                missedFuelUp = missedFuelUp,
-                                // Send empty strings rather than null so notes/tags are always
-                                // present in the form body, matching what LubeLogger's web UI sends.
-                                notes = notes,
-                                tags = tags,
-                                planType = planType,
-                                priority = priority,
-                                progress = progress,
-                                partNumber = partNumber.ifBlank { null },
-                                partSupplier = partSupplier.ifBlank { null },
-                                partQuantity = partQuantity.toLongOrNull(),
-                                dueDate = dueDate,
-                                dueOdometer = dueOdometer.toLongOrNull(),
-                                metric = metric,
-                                isEquipped = isEquipped,
-                                noteText = noteText.ifBlank { null },
-                                pinned = pinned,
-                                files = attachments,
-                                extraFields = extraFields,
-                            ),
+                        if (isEdit) {
+                            val result = submit(
+                                area = area,
+                                vehicleId = vehicleId,
+                                id = recordId.toLongOrNull(),
+                                values = FormValues(
+                                    date = date,
+                                    odometer = odometer.toLongOrNull(),
+                                    initialOdometer = initialOdometer.toLongOrNull(),
+                                    description = description.ifBlank { null },
+                                    cost = cost.toDoubleOrNull(),
+                                    fuelConsumed = fuelConsumed.toDoubleOrNull(),
+                                    isFillToFull = isFillToFull,
+                                    missedFuelUp = missedFuelUp,
+                                    // Send empty strings rather than null so notes/tags are always
+                                    // present in the form body, matching LubeLogger's web UI.
+                                    notes = notes,
+                                    tags = tags,
+                                    planType = planType,
+                                    priority = priority,
+                                    progress = progress,
+                                    partNumber = partNumber.ifBlank { null },
+                                    partSupplier = partSupplier.ifBlank { null },
+                                    partQuantity = partQuantity.toLongOrNull(),
+                                    dueDate = dueDate,
+                                    dueOdometer = dueOdometer.toLongOrNull(),
+                                    metric = metric,
+                                    isEquipped = isEquipped,
+                                    noteText = noteText.ifBlank { null },
+                                    pinned = pinned,
+                                    files = attachments,
+                                    extraFields = extraFields,
+                                ),
+                            )
+                            submitting = false
+                            result.fold(
+                                onSuccess = { onBack() },
+                                onFailure = { error = it.message },
+                            )
+                            return@launch
+                        }
+
+                        // ---- New record: submit live, or queue it when the server is away ----
+                        val fields = QueuedFields(
+                            date = date,
+                            odometer = odometer.toLongOrNull(),
+                            initialOdometer = initialOdometer.toLongOrNull(),
+                            description = description.ifBlank { null },
+                            cost = cost.toDoubleOrNull(),
+                            fuelConsumed = fuelConsumed.toDoubleOrNull(),
+                            isFillToFull = isFillToFull,
+                            missedFuelUp = missedFuelUp,
+                            notes = notes,
+                            tags = tags,
+                            planType = planType,
+                            priority = priority,
+                            progress = progress,
+                            partNumber = partNumber.ifBlank { null },
+                            partSupplier = partSupplier.ifBlank { null },
+                            partQuantity = partQuantity.toLongOrNull(),
+                            dueDate = dueDate,
+                            dueOdometer = dueOdometer.toLongOrNull(),
+                            metric = metric,
+                            isEquipped = isEquipped,
+                            noteText = noteText.ifBlank { null },
+                            pinned = pinned,
                         )
-                        submitting = false
-                        result.fold(
-                            onSuccess = { onBack() },
-                            onFailure = { error = it.message },
-                        )
+
+                        suspend fun queueIt() {
+                            val uploaded = attachments.map {
+                                QueuedAttachment(it.name ?: "attachment", "image/jpeg", location = it.location)
+                            }
+                            Graph.offlineQueue.enqueue(
+                                area = area,
+                                vehicleId = vehicleId,
+                                vehicleName = vehicleName.ifBlank { "Vehicle #$vehicleId" },
+                                fields = fields,
+                                uploaded = uploaded,
+                                staged = pendingImages,
+                            )
+                            Toast.makeText(context, QUEUED_MESSAGE, Toast.LENGTH_LONG).show()
+                        }
+
+                        // Pure-live path only when the server is reachable and every receipt is
+                        // already uploaded; otherwise queue (enqueue flushes immediately when
+                        // reachable, so an online save with pending receipts still goes up now).
+                        if (Graph.serverStatus.isReachable() && pendingImages.isEmpty()) {
+                            Graph.repository.add(area, vehicleId, fields, attachments).fold(
+                                onSuccess = { onBack() },
+                                onFailure = { e ->
+                                    if (!Graph.serverStatus.isReachable()) {
+                                        queueIt()
+                                        onBack()
+                                    } else {
+                                        error = e.message
+                                        submitting = false
+                                    }
+                                },
+                            )
+                        } else {
+                            queueIt()
+                            onBack()
+                        }
                     }
                 },
                 enabled = !submitting,
@@ -584,9 +683,11 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 @Composable
 private fun ReceiptSection(
     attachments: List<FileAttachment>,
+    pending: List<QueuedAttachment>,
     uploading: Boolean,
     onScan: () -> Unit,
     onRemove: (FileAttachment) -> Unit,
+    onRemovePending: (QueuedAttachment) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         OutlinedButton(
@@ -602,25 +703,48 @@ private fun ReceiptSection(
             }
         }
         attachments.forEach { file ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    Icons.Filled.AttachFile,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
+            AttachmentRow(
+                name = file.name?.ifBlank { null } ?: "Attachment",
+                caption = null,
+                onRemove = { onRemove(file) },
+            )
+        }
+        // Receipts scanned while offline: not yet uploaded, shown so the user knows they'll go up
+        // with the record once it flushes from the queue.
+        pending.forEach { p ->
+            AttachmentRow(
+                name = p.fileName,
+                caption = "Pending upload",
+                onRemove = { onRemovePending(p) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AttachmentRow(name: String, caption: String?, onRemove: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(
+            Icons.Filled.AttachFile,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+            Text(text = name, style = MaterialTheme.typography.bodySmall)
+            if (caption != null) {
                 Text(
-                    text = file.name?.ifBlank { null } ?: "Attachment",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                    text = caption,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                IconButton(onClick = { onRemove(file) }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Remove ${file.name}")
-                }
             }
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Filled.Close, contentDescription = "Remove $name")
         }
     }
 }
@@ -639,14 +763,13 @@ private fun receiptFileName(
     date: String,
     area: RecordArea,
     odometer: String,
-    existing: List<FileAttachment>,
+    taken: Set<String>,
 ): String {
     val datePart = date.ifBlank { LocalDate.now().toString() }
     val type = area.name.lowercase()
     val odo = odometer.trim()
     val base = if (odo.isNotBlank()) "${datePart}_${type}_${odo}_receipt"
     else "${datePart}_${type}_receipt"
-    val taken = existing.mapNotNull { it.name?.lowercase() }.toSet()
     var candidate = "$base.jpg"
     var n = 2
     while (candidate.lowercase() in taken) {
@@ -655,6 +778,10 @@ private fun receiptFileName(
     }
     return candidate
 }
+
+/** Shown after a new record is saved to the offline queue. */
+private const val QUEUED_MESSAGE =
+    "Saved to queue — it'll upload when the server is reachable"
 
 private suspend fun submit(
     area: RecordArea,
