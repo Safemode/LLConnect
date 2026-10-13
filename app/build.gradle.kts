@@ -13,8 +13,8 @@ android {
         applicationId = "com.safemode.llconnect"
         minSdk = 24
         targetSdk = 37
-        versionCode = 9
-        versionName = "1.4"
+        versionCode = 10
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -90,6 +90,9 @@ dependencies {
 
     // Storage
     implementation(libs.androidx.datastore.preferences)
+
+    // Background work (notifications scheduling)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // Images
     implementation(libs.coil.compose)

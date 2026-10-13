@@ -2,6 +2,8 @@ package com.safemode.llconnect
 
 import android.content.Context
 import com.safemode.llconnect.data.LubeLoggerRepository
+import com.safemode.llconnect.data.notifications.NotificationScheduler
+import com.safemode.llconnect.data.notifications.Notifications
 import com.safemode.llconnect.data.queue.OfflineQueue
 import com.safemode.llconnect.data.remote.ApiProvider
 import com.safemode.llconnect.data.remote.NetworkMonitor
@@ -81,11 +83,18 @@ object Graph {
         appScope.launch {
             ProcessLifecycleOwner.get().lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 // StateFlow already de-duplicates, so collect directly; flush() no-ops unless the
-                // server is reachable and the queue is non-empty.
+                // server is reachable and the queue is non-empty. (Result is ignored here; only the
+                // daily worker notifies about queue outcomes.)
                 serverStatus.state.collect { state ->
                     if (state == ServerReachability.REACHABLE) offlineQueue.flush()
                 }
             }
+        }
+
+        // Notifications: create channels and (re)schedule the daily worker from saved preferences.
+        Notifications.ensureChannels(app)
+        appScope.launch {
+            NotificationScheduler.schedule(app, settingsRepository.config.first())
         }
     }
 

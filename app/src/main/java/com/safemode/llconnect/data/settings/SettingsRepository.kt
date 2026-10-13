@@ -34,6 +34,10 @@ class SettingsRepository(private val context: Context) {
         val CACHE_SIZE = stringPreferencesKey("cache_size")
         val THEME = stringPreferencesKey("theme_preference")
         val FAVORITE_VEHICLE = stringPreferencesKey("favorite_vehicle")
+        val NOTIFY_ODOMETER = booleanPreferencesKey("notify_odometer_daily")
+        val ODOMETER_TIME = stringPreferencesKey("odometer_reminder_time")
+        val NOTIFY_REMINDERS = booleanPreferencesKey("notify_reminders")
+        val NOTIFY_QUEUE = booleanPreferencesKey("notify_queue")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -63,6 +67,10 @@ class SettingsRepository(private val context: Context) {
                 ThemePreference.valueOf(prefs[Keys.THEME] ?: "SYSTEM")
             }.getOrDefault(ThemePreference.SYSTEM),
             favoriteVehicleId = prefs[Keys.FAVORITE_VEHICLE] ?: "",
+            notifyOdometerDaily = prefs[Keys.NOTIFY_ODOMETER] ?: false,
+            odometerReminderTime = prefs[Keys.ODOMETER_TIME] ?: "18:00",
+            notifyReminders = prefs[Keys.NOTIFY_REMINDERS] ?: false,
+            notifyQueue = prefs[Keys.NOTIFY_QUEUE] ?: false,
         )
     }
 
@@ -82,6 +90,10 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.CACHE_SIZE] = config.cacheSize.name
             prefs[Keys.THEME] = config.themePreference.name
             prefs[Keys.FAVORITE_VEHICLE] = config.favoriteVehicleId
+            prefs[Keys.NOTIFY_ODOMETER] = config.notifyOdometerDaily
+            prefs[Keys.ODOMETER_TIME] = config.odometerReminderTime
+            prefs[Keys.NOTIFY_REMINDERS] = config.notifyReminders
+            prefs[Keys.NOTIFY_QUEUE] = config.notifyQueue
         }
     }
 

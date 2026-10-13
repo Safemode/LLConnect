@@ -58,7 +58,18 @@ data class ConnectionConfig(
     val themePreference: ThemePreference = ThemePreference.SYSTEM,
     /** The one vehicle (by id) marked as favorite, or blank if none. Drives dashboard quick entry. */
     val favoriteVehicleId: String = "",
+    /** Post a daily local reminder to log an odometer reading. */
+    val notifyOdometerDaily: Boolean = false,
+    /** Time of day for the daily odometer reminder (and the daily notification check), as "HH:mm". */
+    val odometerReminderTime: String = "18:00",
+    /** Notify about reminders the server marks urgent/very-urgent or past-due. */
+    val notifyReminders: Boolean = false,
+    /** Notify when queued records finish uploading (or fail) during the daily check. */
+    val notifyQueue: Boolean = false,
 ) {
+    /** True when any notification type is enabled (drives scheduling the daily worker). */
+    val anyNotificationEnabled: Boolean
+        get() = notifyOdometerDaily || notifyReminders || notifyQueue
     /** True once there is enough to attempt a connection. */
     val isConfigured: Boolean
         get() = host.isNotBlank() && when (authMode) {

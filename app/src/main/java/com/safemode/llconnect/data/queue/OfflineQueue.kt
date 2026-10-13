@@ -143,24 +143,37 @@ class OfflineQueue(
      * when a flush is already running. Stops (leaving the rest queued) on the first connectivity
      * failure; records a message on an entry that fails for any other reason and moves on.
      */
-    suspend fun flush() {
-        if (_entries.value.isEmpty() || !serverStatus.isReachable()) return
-        if (!flushMutex.tryLock()) return
+    suspend fun flush(): FlushOutcome {
+        if (_entries.value.isEmpty() || !serverStatus.isReachable()) return FlushOutcome()
+        if (!flushMutex.tryLock()) return FlushOutcome()
+        var uploaded = 0
+        var failed = 0
         try {
             _flushing.value = true
             for (snapshot in _entries.value) {
                 if (!serverStatus.isReachable()) break
                 when (val result = flushOne(snapshot.id)) {
-                    FlushResult.Done, FlushResult.Duplicate -> remove(snapshot.id)
+                    FlushResult.Done -> {
+                        remove(snapshot.id)
+                        uploaded++
+                    }
+                    FlushResult.Duplicate -> remove(snapshot.id)
                     FlushResult.Connectivity -> break
-                    is FlushResult.Failed -> setError(snapshot.id, result.message)
+                    is FlushResult.Failed -> {
+                        setError(snapshot.id, result.message)
+                        failed++
+                    }
                 }
             }
         } finally {
             _flushing.value = false
             flushMutex.unlock()
         }
+        return FlushOutcome(uploaded, failed)
     }
+
+    /** Result of a flush pass: how many entries were newly created, and how many failed. */
+    data class FlushOutcome(val uploaded: Int = 0, val failed: Int = 0)
 
     private sealed interface FlushResult {
         /** Successfully created on the server. */
