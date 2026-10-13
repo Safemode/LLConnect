@@ -13,8 +13,8 @@ android {
         applicationId = "com.safemode.llconnect"
         minSdk = 24
         targetSdk = 37
-        versionCode = 8
-        versionName = "1.3.2"
+        versionCode = 9
+        versionName = "1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -35,6 +35,7 @@ private val bottomItems = listOf(
 fun AppDrawerContent(
     currentRoute: String?,
     onDestinationClick: (TopDestination) -> Unit,
+    queueCount: Int = 0,
 ) {
     ModalDrawerSheet {
         Column(modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp)) {
@@ -58,11 +59,11 @@ fun AppDrawerContent(
         ) {
             TopDestination.entries
                 .filter { it !in bottomItems }
-                .forEach { dest -> DrawerItem(dest, currentRoute, onDestinationClick) }
+                .forEach { dest -> DrawerItem(dest, currentRoute, onDestinationClick, queueCount) }
         }
 
         HorizontalDivider()
-        bottomItems.forEach { dest -> DrawerItem(dest, currentRoute, onDestinationClick) }
+        bottomItems.forEach { dest -> DrawerItem(dest, currentRoute, onDestinationClick, queueCount) }
         Spacer(modifier = Modifier.height(8.dp))
     }
 }
@@ -72,10 +73,14 @@ private fun DrawerItem(
     dest: TopDestination,
     currentRoute: String?,
     onClick: (TopDestination) -> Unit,
+    queueCount: Int,
 ) {
+    // Only the Queue row carries a badge, showing how many entries are waiting to upload.
+    val badgeCount = queueCount.takeIf { dest == TopDestination.QUEUE && it > 0 }
     NavigationDrawerItem(
         label = { Text(dest.label) },
         icon = { Icon(dest.icon, contentDescription = null) },
+        badge = badgeCount?.let { { Text(it.toString()) } },
         selected = dest.route == currentRoute,
         onClick = { onClick(dest) },
         modifier = Modifier.drawerRow(),

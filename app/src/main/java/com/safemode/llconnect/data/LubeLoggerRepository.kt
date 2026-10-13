@@ -18,6 +18,7 @@ import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.data.remote.models.VehicleAddRequest
 import com.safemode.llconnect.data.remote.models.VehicleUpdateRequest
 import com.safemode.llconnect.data.remote.models.WhoAmI
+import com.safemode.llconnect.data.queue.QueuedFields
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.Request
@@ -447,6 +448,199 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
 
     suspend fun updateNote(body: NoteRequest): Result<Unit> =
         callUnit { it.updateNote(FormEncoder.fields(body)) }
+
+    // ---- Records: add a new record from queued form values ----
+
+    /**
+     * Adds a new record of any area from the generic [QueuedFields], attaching [files]. This is the
+     * add-only request construction shared by the record form's new-record path and the offline
+     * queue flush, so both build identical requests. Edits are not handled here.
+     */
+    suspend fun add(
+        area: RecordArea,
+        vehicleId: String,
+        fields: QueuedFields,
+        files: List<FileAttachment>,
+    ): Result<Unit> {
+        val f = files.ifEmpty { null }
+        return when (area) {
+            RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE -> addServiceLike(
+                area, vehicleId,
+                GenericRecordRequest(
+                    date = fields.date,
+                    odometer = fields.odometer,
+                    description = fields.description,
+                    cost = fields.cost,
+                    notes = fields.notes,
+                    tags = fields.tags,
+                    files = f,
+                ),
+            )
+            RecordArea.TAX -> addTax(
+                vehicleId,
+                TaxRecordRequest(
+                    date = fields.date,
+                    description = fields.description,
+                    cost = fields.cost,
+                    notes = fields.notes,
+                    tags = fields.tags,
+                    files = f,
+                ),
+            )
+            RecordArea.GAS -> addGas(
+                vehicleId,
+                GasRecordRequest(
+                    date = fields.date,
+                    odometer = fields.odometer,
+                    fuelConsumed = fields.fuelConsumed,
+                    cost = fields.cost,
+                    isFillToFull = fields.isFillToFull,
+                    missedFuelUp = fields.missedFuelUp,
+                    notes = fields.notes,
+                    tags = fields.tags,
+                    files = f,
+                ),
+            )
+            RecordArea.ODOMETER -> addOdometer(
+                vehicleId,
+                OdometerRecordRequest(
+                    date = fields.date,
+                    initialOdometer = fields.initialOdometer,
+                    odometer = fields.odometer,
+                    notes = fields.notes,
+                    tags = fields.tags,
+                    files = f,
+                ),
+            )
+            RecordArea.PLAN -> addPlan(
+                vehicleId,
+                PlanRecordRequest(
+                    description = fields.description,
+                    cost = fields.cost,
+                    type = fields.planType,
+                    priority = fields.priority,
+                    progress = fields.progress,
+                    notes = fields.notes,
+                    files = f,
+                ),
+            )
+            RecordArea.SUPPLY -> addSupply(
+                vehicleId,
+                SupplyRecordRequest(
+                    date = fields.date,
+                    partNumber = fields.partNumber,
+                    partSupplier = fields.partSupplier,
+                    partQuantity = fields.partQuantity,
+                    description = fields.description,
+                    cost = fields.cost,
+                    notes = fields.notes,
+                    tags = fields.tags,
+                    files = f,
+                ),
+            )
+            RecordArea.REMINDER -> addReminder(
+                vehicleId,
+                ReminderRecordRequest(
+                    description = fields.description,
+                    dueDate = if (fields.metric != "Odometer") fields.dueDate else null,
+                    dueOdometer = if (fields.metric != "Date") fields.dueOdometer else null,
+                    metric = fields.metric,
+                    notes = fields.notes,
+                    tags = fields.tags,
+                ),
+            )
+            RecordArea.EQUIPMENT -> addEquipment(
+                vehicleId,
+                EquipmentRecordRequest(
+                    description = fields.description,
+                    isEquipped = fields.isEquipped,
+                    notes = fields.notes,
+                    tags = fields.tags,
+                    files = f,
+                ),
+            )
+            RecordArea.NOTE -> addNote(
+                vehicleId,
+                NoteRequest(
+                    description = fields.description,
+                    noteText = fields.noteText,
+                    pinned = fields.pinned,
+                    tags = fields.tags,
+                    files = f,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Whether the server already holds a record matching [fields] for this vehicle/area, used by
+     * the queue flush to avoid creating a second copy when a flush is retried or a write partially
+     * succeeded. Matches on the identifying fields per area (a pragmatic "same key fields" check,
+     * not a strict equality of every field).
+     */
+    suspend fun findDuplicateAdd(
+        area: RecordArea,
+        vehicleId: String,
+        fields: QueuedFields,
+    ): Result<Boolean> = runCatching {
+        val api = api()
+        when (area) {
+            RecordArea.SERVICE -> api.getServiceRecords(vehicleId).unwrap().any {
+                sameDate(it.date, fields.date) && sameLong(it.odometer, fields.odometer) &&
+                    sameCost(it.cost, fields.cost) && sameText(it.description, fields.description)
+            }
+            RecordArea.REPAIR -> api.getRepairRecords(vehicleId).unwrap().any {
+                sameDate(it.date, fields.date) && sameLong(it.odometer, fields.odometer) &&
+                    sameCost(it.cost, fields.cost) && sameText(it.description, fields.description)
+            }
+            RecordArea.UPGRADE -> api.getUpgradeRecords(vehicleId).unwrap().any {
+                sameDate(it.date, fields.date) && sameLong(it.odometer, fields.odometer) &&
+                    sameCost(it.cost, fields.cost) && sameText(it.description, fields.description)
+            }
+            RecordArea.TAX -> api.getTaxRecords(vehicleId).unwrap().any {
+                sameDate(it.date, fields.date) && sameCost(it.cost, fields.cost) &&
+                    sameText(it.description, fields.description)
+            }
+            RecordArea.GAS -> api.getGasRecords(vehicleId, null, null).unwrap().any {
+                sameDate(it.date, fields.date) && sameLong(it.odometer, fields.odometer) &&
+                    sameCost(it.cost, fields.cost) && sameCost(it.fuelConsumed, fields.fuelConsumed)
+            }
+            RecordArea.ODOMETER -> api.getOdometerRecords(vehicleId).unwrap().any {
+                sameDate(it.date, fields.date) && sameLong(it.odometer, fields.odometer)
+            }
+            RecordArea.PLAN -> api.getPlanRecords(vehicleId).unwrap().any {
+                sameText(it.description, fields.description) && sameCost(it.cost, fields.cost)
+            }
+            RecordArea.SUPPLY -> api.getSupplyRecords(vehicleId).unwrap().any {
+                sameDate(it.date, fields.date) && sameText(it.description, fields.description) &&
+                    sameText(it.partNumber, fields.partNumber) && sameCost(it.cost, fields.cost)
+            }
+            RecordArea.REMINDER -> api.getReminders(vehicleId).unwrap().any {
+                sameText(it.description, fields.description) && sameDate(it.dueDate, fields.dueDate)
+            }
+            RecordArea.EQUIPMENT -> api.getEquipmentRecords(vehicleId).unwrap().any {
+                sameText(it.description, fields.description)
+            }
+            RecordArea.NOTE -> api.getNotes(vehicleId).unwrap().any {
+                sameText(it.description, fields.description) && sameText(it.noteText, fields.noteText)
+            }
+        }
+    }
+
+    private fun sameDate(a: String?, b: String?): Boolean {
+        val da = parseDate(a)
+        val db = parseDate(b)
+        return if (da != null && db != null) da == db
+        else a?.trim().orEmpty() == b?.trim().orEmpty()
+    }
+
+    private fun sameText(a: String?, b: String?): Boolean =
+        a?.trim().orEmpty() == b?.trim().orEmpty()
+
+    private fun sameCost(a: Double?, b: Double?): Boolean =
+        kotlin.math.abs((a ?: 0.0) - (b ?: 0.0)) < 0.005
+
+    private fun sameLong(a: Long?, b: Long?): Boolean = (a ?: 0L) == (b ?: 0L)
 
     // ---- Records: fetch a single record for editing ----
     suspend fun getRecordForEdit(

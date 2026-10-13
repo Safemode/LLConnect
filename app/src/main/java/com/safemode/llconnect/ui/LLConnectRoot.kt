@@ -55,6 +55,7 @@ import com.safemode.llconnect.ui.history.HistoryScreen
 import com.safemode.llconnect.ui.navigation.AppDrawerContent
 import com.safemode.llconnect.ui.navigation.Routes
 import com.safemode.llconnect.ui.navigation.TopDestination
+import com.safemode.llconnect.ui.queue.QueueScreen
 import com.safemode.llconnect.ui.records.RecordFormScreen
 import com.safemode.llconnect.ui.records.RecordsScreen
 import com.safemode.llconnect.ui.reminders.RemindersScreen
@@ -78,6 +79,8 @@ fun LLConnectRoot() {
 
     val serverState by Graph.serverStatus.state.collectAsStateWithLifecycle()
     val showBanner = serverState != ServerReachability.REACHABLE
+
+    val queuedEntries by Graph.offlineQueue.entries.collectAsStateWithLifecycle()
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
@@ -113,6 +116,7 @@ fun LLConnectRoot() {
                         }
                     }
                 },
+                queueCount = queuedEntries.size,
             )
         },
     ) {
@@ -244,6 +248,9 @@ fun LLConnectRoot() {
                     recordId = recordId,
                     onBack = { navController.popBackStack() },
                 )
+            }
+            composable(Routes.QUEUE) {
+                QueueScreen()
             }
             composable(Routes.REMINDERS) {
                 RemindersScreen()
