@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.safemode.llconnect.Graph
+import com.safemode.llconnect.data.RecordArea
+import com.safemode.llconnect.data.notifications.Notifications
 import com.safemode.llconnect.data.remote.ServerReachability
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.navigation.NavType
@@ -66,13 +69,37 @@ import com.safemode.llconnect.ui.tools.ToolsScreen
 import com.safemode.llconnect.ui.vehicles.VehicleDetailScreen
 import com.safemode.llconnect.ui.vehicles.VehicleFormScreen
 import com.safemode.llconnect.ui.vehicles.VehiclesScreen
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
-fun LLConnectRoot() {
+fun LLConnectRoot(
+    navTarget: String? = null,
+    onNavTargetHandled: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+
+    // Deep-link from a tapped notification: resolve the route (odometer uses the favorite vehicle)
+    // and navigate once, then clear the pending target.
+    LaunchedEffect(navTarget) {
+        val target = navTarget ?: return@LaunchedEffect
+        val route = when (target) {
+            Notifications.TARGET_ODOMETER -> {
+                val favorite = Graph.settingsRepository.config.first().favoriteVehicleId
+                if (favorite.isNotBlank()) Routes.recordForm(favorite, RecordArea.ODOMETER.name)
+                else Routes.VEHICLES
+            }
+            Notifications.TARGET_REMINDERS -> Routes.REMINDERS
+            Notifications.TARGET_QUEUE -> Routes.QUEUE
+            else -> null
+        }
+        if (route != null) {
+            navController.navigate(route) { launchSingleTop = true }
+        }
+        onNavTargetHandled()
+    }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route

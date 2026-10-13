@@ -1,5 +1,6 @@
 package com.safemode.llconnect
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -9,15 +10,21 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.safemode.llconnect.data.notifications.Notifications
 import com.safemode.llconnect.data.settings.ConnectionConfig
 import com.safemode.llconnect.data.settings.ThemePreference
 import com.safemode.llconnect.ui.LLConnectRoot
 import com.safemode.llconnect.ui.theme.LLConnectTheme
 
 class MainActivity : ComponentActivity() {
+    // Route hint from a tapped notification, consumed once by LLConnectRoot.
+    private val navTarget = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        navTarget.value = intent?.getStringExtra(Notifications.EXTRA_NAV_TARGET)
         enableEdgeToEdge()
         setContent {
             val config by Graph.settingsRepository.config
@@ -47,9 +54,18 @@ class MainActivity : ComponentActivity() {
             }
 
             LLConnectTheme(themePreference = preference) {
-                LLConnectRoot()
+                LLConnectRoot(
+                    navTarget = navTarget.value,
+                    onNavTargetHandled = { navTarget.value = null },
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(Notifications.EXTRA_NAV_TARGET)?.let { navTarget.value = it }
     }
 
     private companion object {

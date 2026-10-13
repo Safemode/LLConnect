@@ -61,6 +61,10 @@ class SettingsViewModel : ViewModel() {
                 recordSortOrder = updated.recordSortOrder,
                 cacheSize = updated.cacheSize,
                 themePreference = updated.themePreference,
+                notifyOdometerDaily = updated.notifyOdometerDaily,
+                odometerReminderTime = updated.odometerReminderTime,
+                notifyReminders = updated.notifyReminders,
+                notifyQueue = updated.notifyQueue,
             )
             settings.save(merged)
             apiProvider.updateConfig(merged)
