@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -38,6 +39,7 @@ class SettingsRepository(private val context: Context) {
         val ODOMETER_TIME = stringPreferencesKey("odometer_reminder_time")
         val NOTIFY_REMINDERS = booleanPreferencesKey("notify_reminders")
         val NOTIFY_QUEUE = booleanPreferencesKey("notify_queue")
+        val FULL_QUALITY_AREAS = stringSetPreferencesKey("full_quality_areas")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -71,6 +73,7 @@ class SettingsRepository(private val context: Context) {
             odometerReminderTime = prefs[Keys.ODOMETER_TIME] ?: "18:00",
             notifyReminders = prefs[Keys.NOTIFY_REMINDERS] ?: false,
             notifyQueue = prefs[Keys.NOTIFY_QUEUE] ?: false,
+            fullQualityAreas = prefs[Keys.FULL_QUALITY_AREAS] ?: emptySet(),
         )
     }
 
@@ -94,6 +97,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.ODOMETER_TIME] = config.odometerReminderTime
             prefs[Keys.NOTIFY_REMINDERS] = config.notifyReminders
             prefs[Keys.NOTIFY_QUEUE] = config.notifyQueue
+            prefs[Keys.FULL_QUALITY_AREAS] = config.fullQualityAreas
         }
     }
 

@@ -65,6 +65,7 @@ class SettingsViewModel : ViewModel() {
                 odometerReminderTime = updated.odometerReminderTime,
                 notifyReminders = updated.notifyReminders,
                 notifyQueue = updated.notifyQueue,
+                fullQualityAreas = updated.fullQualityAreas,
             )
             settings.save(merged)
             apiProvider.updateConfig(merged)

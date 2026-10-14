@@ -252,6 +252,7 @@ fun RecordFormScreen(
     if (scanning) {
         BackHandler { scanning = false }
         ScanReceiptScreen(
+            quality = Graph.apiProvider.currentConfig().receiptQuality(area),
             onBack = { scanning = false },
             onResult = { path ->
                 scanning = false
@@ -263,22 +264,26 @@ fun RecordFormScreen(
                     if (bytes == null) {
                         error = "Couldn't read the scanned image."
                     } else {
+                        // The scanner names the cache file with the encoded format's extension
+                        // (jpg when compressed, png when full quality); mirror it in the upload.
+                        val ext = path.substringAfterLast('.', "jpg").lowercase()
+                        val mime = if (ext == "png") "image/png" else "image/jpeg"
                         val taken = (attachments.mapNotNull { it.name } + pendingImages.map { it.fileName })
                             .map { it.lowercase() }.toSet()
-                        val name = receiptFileName(date, area, odometer, taken)
+                        val name = receiptFileName(date, area, odometer, taken, ext)
                         if (Graph.serverStatus.isReachable()) {
-                            Graph.repository.uploadDocument(name, "image/jpeg", bytes).fold(
+                            Graph.repository.uploadDocument(name, mime, bytes).fold(
                                 onSuccess = { attachments = attachments + it },
                                 onFailure = {
                                     // Likely just lost the server — stage it locally so it uploads
                                     // with the record once it flushes from the queue.
                                     pendingImages = pendingImages +
-                                        Graph.offlineQueue.stageImage(bytes, name, "image/jpeg")
+                                        Graph.offlineQueue.stageImage(bytes, name, mime)
                                 },
                             )
                         } else {
                             pendingImages = pendingImages +
-                                Graph.offlineQueue.stageImage(bytes, name, "image/jpeg")
+                                Graph.offlineQueue.stageImage(bytes, name, mime)
                         }
                         runCatching { file.delete() }
                     }
@@ -764,16 +769,17 @@ private fun receiptFileName(
     area: RecordArea,
     odometer: String,
     taken: Set<String>,
+    extension: String,
 ): String {
     val datePart = date.ifBlank { LocalDate.now().toString() }
     val type = area.name.lowercase()
     val odo = odometer.trim()
     val base = if (odo.isNotBlank()) "${datePart}_${type}_${odo}_receipt"
     else "${datePart}_${type}_receipt"
-    var candidate = "$base.jpg"
+    var candidate = "$base.$extension"
     var n = 2
     while (candidate.lowercase() in taken) {
-        candidate = "${base}_$n.jpg"
+        candidate = "${base}_$n.$extension"
         n++
     }
     return candidate
