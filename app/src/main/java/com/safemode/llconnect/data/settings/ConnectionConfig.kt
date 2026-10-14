@@ -1,5 +1,8 @@
 package com.safemode.llconnect.data.settings
 
+import com.safemode.llconnect.data.RecordArea
+import com.safemode.llconnect.data.scan.ReceiptQuality
+
 enum class AuthMode { API_KEY, BASIC }
 
 /** How fuel economy is reported by the gas endpoints. */
@@ -66,10 +69,19 @@ data class ConnectionConfig(
     val notifyReminders: Boolean = false,
     /** Notify when queued records finish uploading (or fail) during the daily check. */
     val notifyQueue: Boolean = false,
+    /**
+     * Record areas (by [RecordArea.name]) whose scanned receipts use full-resolution lossless PNG.
+     * Any area not listed uses the default compressed JPEG. Empty by default.
+     */
+    val fullQualityAreas: Set<String> = emptySet(),
 ) {
     /** True when any notification type is enabled (drives scheduling the daily worker). */
     val anyNotificationEnabled: Boolean
         get() = notifyOdometerDaily || notifyReminders || notifyQueue
+
+    /** The scan quality configured for [area] (compressed unless the area is opted into full quality). */
+    fun receiptQuality(area: RecordArea): ReceiptQuality =
+        if (area.name in fullQualityAreas) ReceiptQuality.FULL else ReceiptQuality.COMPRESSED
     /** True once there is enough to attempt a connection. */
     val isConfigured: Boolean
         get() = host.isNotBlank() && when (authMode) {

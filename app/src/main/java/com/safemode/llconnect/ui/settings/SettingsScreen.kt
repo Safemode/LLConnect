@@ -7,6 +7,7 @@ import android.os.Build
 import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -20,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +31,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.safemode.llconnect.data.RecordArea
 import com.safemode.llconnect.data.notifications.NotificationScheduler
 import com.safemode.llconnect.data.settings.CacheSize
 import com.safemode.llconnect.data.settings.ConnectionConfig
@@ -71,6 +78,7 @@ fun SettingsScreen(
 
     val context = LocalContext.current
     var showTimePicker by remember { mutableStateOf(false) }
+    var qualityExpanded by remember { mutableStateOf(false) }
     // Result ignored: posting is gated by Notifications.canPost() at send time, so a denied grant
     // simply means nothing is shown until the user allows it in system settings.
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -154,6 +162,20 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            // ---- Receipt scan quality card ----
+            ReceiptQualityCard(
+                fullQualityAreas = config.fullQualityAreas,
+                expanded = qualityExpanded,
+                onToggleExpanded = { qualityExpanded = !qualityExpanded },
+                onSetFullQuality = { area, full ->
+                    viewModel.updateAndSave {
+                        val areas = it.fullQualityAreas.toMutableSet()
+                        if (full) areas.add(area.name) else areas.remove(area.name)
+                        it.copy(fullQualityAreas = areas)
+                    }
+                },
+            )
 
             // ---- Theme card ----
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -309,6 +331,69 @@ fun SettingsScreen(
                 },
                 onDismiss = { showTimePicker = false },
             )
+        }
+    }
+}
+
+/**
+ * Collapsible card for choosing per-section receipt scan quality. Each attachment-carrying area
+ * gets a two-segment Compressed / Full-quality chooser. Collapsed by default since there are many
+ * sections.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReceiptQualityCard(
+    fullQualityAreas: Set<String>,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onSetFullQuality: (RecordArea, Boolean) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpanded),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Receipt scan quality", style = MaterialTheme.typography.titleMedium)
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                )
+            }
+
+            if (expanded) {
+                Text(
+                    "Compressed keeps uploads small. Full quality uploads a full-resolution, " +
+                        "lossless image (much larger) — set it per section where receipt " +
+                        "detail matters.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                RecordArea.entries.filter { it.supportsAttachments }.forEach { area ->
+                    val full = area.name in fullQualityAreas
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(area.label, style = MaterialTheme.typography.bodyLarge)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            SegmentedButton(
+                                selected = !full,
+                                onClick = { onSetFullQuality(area, false) },
+                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                            ) { Text("Compressed") }
+                            SegmentedButton(
+                                selected = full,
+                                onClick = { onSetFullQuality(area, true) },
+                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                            ) { Text("Full quality") }
+                        }
+                    }
+                }
+            }
         }
     }
 }

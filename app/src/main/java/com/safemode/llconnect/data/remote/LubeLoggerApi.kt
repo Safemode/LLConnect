@@ -23,7 +23,7 @@ import retrofit2.http.Part
 import retrofit2.http.Query
 
 /**
- * Retrofit interface for the LubeLogger REST API (v1.7.3).
+ * Retrofit interface for the LubeLogger REST API (verified against v1.7.4).
  * Auth headers (x-api-key / Basic) and the culture-invariant header are added
  * by [AuthInterceptor], so they are not declared here.
  */

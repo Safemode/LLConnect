@@ -67,6 +67,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.safemode.llconnect.data.scan.DocumentDetector
 import com.safemode.llconnect.data.scan.ReceiptImage
+import com.safemode.llconnect.data.scan.ReceiptQuality
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -89,6 +90,7 @@ private const val BOX_HOLD_MS = 500L
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScanReceiptScreen(
+    quality: ReceiptQuality,
     onBack: () -> Unit,
     onResult: (String) -> Unit,
 ) {
@@ -228,8 +230,8 @@ fun ScanReceiptScreen(
                         busy = true
                         scope.launch {
                             val path = withContext(Dispatchers.IO) {
-                                val bytes = ReceiptImage.compress(review!!)
-                                ReceiptImage.writeToCache(context, bytes)
+                                val encoded = ReceiptImage.encode(review!!, quality)
+                                ReceiptImage.writeToCache(context, encoded.bytes, encoded.extension)
                             }
                             onResult(path)
                         }
