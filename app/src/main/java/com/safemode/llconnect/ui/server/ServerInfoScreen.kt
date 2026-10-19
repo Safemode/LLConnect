@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.OutlinedTextField
+import com.safemode.llconnect.data.NetworkAddresses
 import com.safemode.llconnect.data.settings.AuthMode
 import com.safemode.llconnect.ui.common.UiState
 
@@ -110,6 +111,14 @@ fun ServerInfoScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (form.scheme == "http" && !NetworkAddresses.isLikelyLocal(form.host)) {
+                            Text(
+                                text = "This host isn't on a local network. Over plain HTTP your " +
+                                    "credentials are sent unencrypted - use HTTPS for a remote server.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 }
 

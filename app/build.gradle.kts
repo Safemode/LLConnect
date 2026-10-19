@@ -13,8 +13,8 @@ android {
         applicationId = "com.safemode.llconnect"
         minSdk = 24
         targetSdk = 37
-        versionCode = 11
-        versionName = "1.6"
+        versionCode = 12
+        versionName = "1.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -45,6 +45,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // BuildConfig.DEBUG gates the HTTP logging interceptor so release builds log no URLs.
+        buildConfig = true
     }
 }
 

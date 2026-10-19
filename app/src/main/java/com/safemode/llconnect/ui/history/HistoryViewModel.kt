@@ -5,13 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.ActivityItem
 import com.safemode.llconnect.ui.common.DateRange
+import com.safemode.llconnect.ui.common.ReloadJob
 import com.safemode.llconnect.ui.common.UiState
 import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class HistoryViewModel : ViewModel() {
     private val repository = Graph.repository
@@ -26,13 +26,15 @@ class HistoryViewModel : ViewModel() {
     private val _range = MutableStateFlow(DateRange.ALL)
     val range: StateFlow<DateRange> = _range.asStateFlow()
 
+    private val reloads = ReloadJob()
+
     init {
         load()
         refreshWhenServerReachable { refresh() }
     }
 
     fun load() {
-        viewModelScope.launch { reload(showLoading = true) }
+        reloads.launch(viewModelScope) { reload(showLoading = true) }
     }
 
     fun setRange(range: DateRange) {
@@ -42,10 +44,13 @@ class HistoryViewModel : ViewModel() {
     }
 
     fun refresh() {
-        viewModelScope.launch {
+        reloads.launch(viewModelScope) {
             _refreshing.value = true
-            reload(showLoading = false)
-            _refreshing.value = false
+            try {
+                reload(showLoading = false)
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 

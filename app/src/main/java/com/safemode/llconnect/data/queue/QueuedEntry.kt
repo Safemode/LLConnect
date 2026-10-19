@@ -7,6 +7,9 @@ import com.safemode.llconnect.data.RecordArea
  * submitted. Scoped to adds only — edits/deletes stay online-only.
  *
  * @property id stable UUID, also the name of this entry's on-disk attachment directory.
+ * @property serverId the base URL of the server this entry was saved against, so changing the
+ *   configured host never replays one server's records onto another. Blank for entries saved
+ *   before server tagging existed.
  * @property createdAt epoch millis the entry was queued (for ordering + "queued Xm ago").
  * @property vehicleName snapshot of the vehicle's display name, so the queue list reads well even
  *   when the server (and its vehicle list) is unreachable.
@@ -19,6 +22,7 @@ import com.safemode.llconnect.data.RecordArea
  */
 data class QueuedEntry(
     val id: String,
+    val serverId: String = "",
     val createdAt: Long,
     val vehicleId: String,
     val vehicleName: String,

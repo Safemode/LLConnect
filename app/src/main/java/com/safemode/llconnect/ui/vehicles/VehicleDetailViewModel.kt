@@ -6,6 +6,7 @@ import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.AreaSummary
 import com.safemode.llconnect.data.RecordArea
 import com.safemode.llconnect.data.remote.models.Vehicle
+import com.safemode.llconnect.ui.common.ReloadJob
 import com.safemode.llconnect.ui.common.UiState
 import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +42,8 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError: StateFlow<String?> = _actionError.asStateFlow()
 
+    private val reloads = ReloadJob()
+
     init {
         load()
         refreshWhenServerReachable { reloadSilently() }
@@ -62,20 +65,23 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
     }
 
     fun load() {
-        viewModelScope.launch { reload(showLoading = true) }
+        reloads.launch(viewModelScope) { reload(showLoading = true) }
     }
 
     /** Silent reload (e.g. when returning after editing the vehicle or its records). */
     fun reloadSilently() {
-        viewModelScope.launch { reload(showLoading = false) }
+        reloads.launch(viewModelScope) { reload(showLoading = false) }
     }
 
     /** Pull-to-refresh. */
     fun refresh() {
-        viewModelScope.launch {
+        reloads.launch(viewModelScope) {
             _refreshing.value = true
-            reload(showLoading = false)
-            _refreshing.value = false
+            try {
+                reload(showLoading = false)
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 

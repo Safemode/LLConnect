@@ -1,19 +1,18 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Backup / transfer rules for API 31 and above.
+
+   The offline write queue (unsent records plus their staged attachment images) is excluded from
+   both cloud backup and device transfer: it is device-local, in-flight state, and replaying it
+   against a different device's configured server could duplicate or misdirect writes. Settings are
+   left in, so a restore keeps the user's preferences; the API key / password are encrypted with a
+   non-exportable Android Keystore key and decrypt to blank on another device.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="file" path="queue" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="file" path="queue" />
     </device-transfer>
-    -->
 </data-extraction-rules>

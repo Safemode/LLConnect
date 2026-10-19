@@ -230,8 +230,7 @@ fun ScanReceiptScreen(
                         busy = true
                         scope.launch {
                             val path = withContext(Dispatchers.IO) {
-                                val encoded = ReceiptImage.encode(review!!, quality)
-                                ReceiptImage.writeToCache(context, encoded.bytes, encoded.extension)
+                                ReceiptImage.encodeToCache(context, review!!, quality).path
                             }
                             onResult(path)
                         }

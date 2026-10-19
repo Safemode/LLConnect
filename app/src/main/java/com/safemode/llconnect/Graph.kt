@@ -51,9 +51,15 @@ object Graph {
         settingsRepository = SettingsRepository(app)
         serverStatus = ServerStatus()
         networkMonitor = NetworkMonitor(app, serverStatus)
-        apiProvider = ApiProvider(app.cacheDir, serverStatus, networkMonitor::isOnline)
+        apiProvider = ApiProvider(app.cacheDir, serverStatus, networkMonitor::isOnline, BuildConfig.DEBUG)
         repository = LubeLoggerRepository(apiProvider)
-        offlineQueue = OfflineQueue(app.filesDir, serverStatus, repository, appScope)
+        offlineQueue = OfflineQueue(
+            app.filesDir,
+            serverStatus,
+            repository,
+            { apiProvider.currentConfig().baseUrl() },
+            appScope,
+        )
 
         // Keep the API provider's config in sync with saved settings.
         settingsRepository.config

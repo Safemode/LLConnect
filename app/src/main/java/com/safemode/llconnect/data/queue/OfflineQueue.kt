@@ -33,6 +33,7 @@ class OfflineQueue(
     filesDir: File,
     private val serverStatus: ServerStatus,
     private val repository: LubeLoggerRepository,
+    private val currentServerId: () -> String,
     scope: CoroutineScope,
 ) {
     private val root = File(filesDir, "queue")
@@ -78,6 +79,22 @@ class OfflineQueue(
             QueuedAttachment(fileName = fileName, mimeType = mimeType, localFileName = localName)
         }
 
+    /**
+     * Stages an already-written image file (moving it into the staging area) so it survives until
+     * the form is saved, without ever holding the whole image in memory. Preferred over
+     * [stageImage] for full-resolution scans.
+     */
+    suspend fun stageImageFile(source: File, fileName: String, mimeType: String): QueuedAttachment =
+        withContext(Dispatchers.IO) {
+            val localName = "${UUID.randomUUID()}_$fileName"
+            val dest = File(stagingDir, localName)
+            if (!source.renameTo(dest)) {
+                source.copyTo(dest, overwrite = true)
+                source.delete()
+            }
+            QueuedAttachment(fileName = fileName, mimeType = mimeType, localFileName = localName)
+        }
+
     /** Discards a staged image the user removed before saving. */
     suspend fun discardStaged(attachment: QueuedAttachment) = withContext(Dispatchers.IO) {
         attachment.localFileName?.let { File(stagingDir, it).delete() }
@@ -111,6 +128,7 @@ class OfflineQueue(
         }
         val entry = QueuedEntry(
             id = id,
+            serverId = currentServerId(),
             createdAt = System.currentTimeMillis(),
             vehicleId = vehicleId,
             vehicleName = vehicleName,
@@ -150,8 +168,12 @@ class OfflineQueue(
         var failed = 0
         try {
             _flushing.value = true
+            val currentServer = currentServerId()
             for (snapshot in _entries.value) {
                 if (!serverStatus.isReachable()) break
+                // Leave entries saved against a different server queued - never replay them onto
+                // whatever host is configured now.
+                if (!queuedForCurrentServer(snapshot.serverId, currentServer)) continue
                 when (val result = flushOne(snapshot.id)) {
                     FlushResult.Done -> {
                         remove(snapshot.id)
@@ -190,22 +212,28 @@ class OfflineQueue(
         var entry = _entries.value.firstOrNull { it.id == entryId } ?: return FlushResult.Done
 
         // 1. Skip if the server already has it (a retry, or a prior write that partially succeeded).
-        repository.findDuplicateAdd(entry.area, entry.vehicleId, entry.fields)
-            .onSuccess { if (it) return FlushResult.Duplicate }
-            .onFailure { if (!serverStatus.isReachable()) return FlushResult.Connectivity }
+        //    If we can't confirm either way, do NOT create - a connection drop after a write reaches
+        //    the server would otherwise make a duplicate on the next flush.
+        val duplicate = repository.findDuplicateAdd(entry.area, entry.vehicleId, entry.fields)
+        duplicate.onSuccess { if (it) return FlushResult.Duplicate }
+        if (duplicate.isFailure) {
+            return if (!serverStatus.isReachable()) FlushResult.Connectivity
+            else FlushResult.Failed(
+                duplicate.exceptionOrNull()?.message ?: "Couldn't verify against the server.",
+            )
+        }
 
         // 2. Upload pending attachments, persisting each success so a retry never re-uploads.
         while (entry.pendingAttachments.isNotEmpty()) {
             val att = entry.pendingAttachments.first()
             val file = File(File(filesRoot, entry.id), att.localFileName.orEmpty())
-            val bytes = withContext(Dispatchers.IO) { runCatching { file.readBytes() }.getOrNull() }
-            if (bytes == null) {
+            if (!withContext(Dispatchers.IO) { file.exists() }) {
                 // The local image is gone; drop it rather than blocking the entry forever.
                 entry = entry.copy(pendingAttachments = entry.pendingAttachments.drop(1))
                 replace(entry)
                 continue
             }
-            val uploadedAtt = repository.uploadDocument(att.fileName, att.mimeType, bytes).fold(
+            val uploadedAtt = repository.uploadDocument(file, att.fileName, att.mimeType).fold(
                 onSuccess = { QueuedAttachment(it.name ?: att.fileName, att.mimeType, location = it.location) },
                 onFailure = {
                     return if (!serverStatus.isReachable()) FlushResult.Connectivity

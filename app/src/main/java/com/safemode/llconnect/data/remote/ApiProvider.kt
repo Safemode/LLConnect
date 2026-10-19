@@ -31,6 +31,8 @@ class ApiProvider(
     private val cacheDir: File,
     val serverStatus: ServerStatus,
     private val isOnline: () -> Boolean,
+    /** Only attach the HTTP logging interceptor in debug builds, so release logs carry no URLs. */
+    private val debugLogging: Boolean = false,
 ) {
 
     @Volatile
@@ -154,18 +156,22 @@ class ApiProvider(
     }
 
     private fun buildClient(): OkHttpClient {
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-            redactHeader("x-api-key")
-            redactHeader("Authorization")
-        }
-        return OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .cache(httpCache)
             .addInterceptor(AuthInterceptor { config })
             // Reports reachability and falls back to cached data when the server is down.
             .addInterceptor(OfflineInterceptor(serverStatus, isOnline))
             .addNetworkInterceptor(CacheWriteInterceptor())
-            .addInterceptor(logging)
+        if (debugLogging) {
+            builder.addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
+                    redactHeader("x-api-key")
+                    redactHeader("Authorization")
+                },
+            )
+        }
+        return builder
             .retryOnConnectionFailure(true)
             // Short connect timeout so a network-up-but-server-down case fails fast instead of
             // hanging; the no-network case skips the network entirely (see OfflineInterceptor).

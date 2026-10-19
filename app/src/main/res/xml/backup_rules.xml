@@ -1,13 +1,13 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Backup rules for API 30 and below (full-backup-content).
+
+   The offline write queue (unsent records plus their staged attachment images) is excluded: it is
+   device-local, in-flight state, and restoring it onto another device could replay writes against
+   whatever server is configured there. Settings (including the API key / password, which are
+   encrypted with a non-exportable Android Keystore key and fail closed on another device) are left
+   in backup so a restore keeps the user's preferences.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="file" path="queue" />
 </full-backup-content>
