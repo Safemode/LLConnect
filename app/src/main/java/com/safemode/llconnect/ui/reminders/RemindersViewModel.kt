@@ -4,13 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.ReminderItem
+import com.safemode.llconnect.ui.common.ReloadJob
 import com.safemode.llconnect.ui.common.UiState
 import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class RemindersViewModel : ViewModel() {
     private val repository = Graph.repository
@@ -22,20 +22,25 @@ class RemindersViewModel : ViewModel() {
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
+    private val reloads = ReloadJob()
+
     init {
         load()
         refreshWhenServerReachable { refresh() }
     }
 
     fun load() {
-        viewModelScope.launch { reload(showLoading = true) }
+        reloads.launch(viewModelScope) { reload(showLoading = true) }
     }
 
     fun refresh() {
-        viewModelScope.launch {
+        reloads.launch(viewModelScope) {
             _refreshing.value = true
-            reload(showLoading = false)
-            _refreshing.value = false
+            try {
+                reload(showLoading = false)
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 

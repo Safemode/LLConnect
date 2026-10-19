@@ -22,7 +22,9 @@ import com.safemode.llconnect.data.queue.QueuedFields
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import com.safemode.llconnect.data.remote.models.GasRecord
 import com.safemode.llconnect.data.remote.models.GenericRecord
 import com.safemode.llconnect.data.remote.models.OdometerRecord
@@ -36,7 +38,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import retrofit2.Response
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 /**
  * Single entry point the UI uses to talk to LubeLogger. Wraps API calls in
@@ -48,7 +49,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         ?: throw IllegalStateException("Connection not configured. Add your server details in Settings.")
 
     private suspend fun <T> call(block: suspend (LubeLoggerApi) -> Response<T>): Result<T> =
-        runCatching {
+        runCatchingCancellable {
             val response = block(api())
             if (response.isSuccessful) {
                 response.body() ?: throw IllegalStateException("Empty response from server.")
@@ -59,7 +60,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
 
     /** For endpoints where we only care about success/failure, not the body. */
     private suspend fun callUnit(block: suspend (LubeLoggerApi) -> Response<*>): Result<Unit> =
-        runCatching {
+        runCatchingCancellable {
             val response = block(api())
             if (response.isSuccessful) Unit
             else throw mapError(response.code(), response.errorBody()?.string())
@@ -71,6 +72,9 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
             401 -> IllegalStateException("Unauthorized (401). Check your API key or credentials.")
             403 -> IllegalStateException("Forbidden (403). This account lacks access.")
             404 -> IllegalStateException("Not found (404). Check the server address.")
+            // The offline interceptor returns 504 when a request can't reach the server and nothing
+            // is cached, so present it as unreachable rather than a raw gateway error.
+            504 -> IllegalStateException("Server unreachable. Check your connection and server address.")
             else -> IllegalStateException("Server error $code${detail?.let { ": $it" } ?: ""}")
         }
     }
@@ -86,7 +90,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
      * which is more consistent across instances than /api/vehicle/info. Falls back to
      * /api/vehicle/info if the id isn't found.
      */
-    suspend fun getVehicleById(vehicleId: String): Result<Vehicle?> = runCatching {
+    suspend fun getVehicleById(vehicleId: String): Result<Vehicle?> = runCatchingCancellable {
         val api = api()
         val fromList = api.getVehicles().unwrap().firstOrNull { it.id?.toString() == vehicleId }
         fromList ?: api.getVehicleInfo(vehicleId).unwrap().firstOrNull()
@@ -105,7 +109,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
 
     /** Parses the whoami body tolerantly, matching keys regardless of camel/Pascal casing. */
     private fun parseWhoAmI(raw: String): WhoAmI {
-        val obj = runCatching { JSONObject(raw.trim()) }.getOrNull() ?: return WhoAmI()
+        val obj = runCatchingCancellable { JSONObject(raw.trim()) }.getOrNull() ?: return WhoAmI()
         fun find(vararg names: String): String? {
             for (key in obj.keys()) {
                 if (names.any { it.equals(key, ignoreCase = true) }) {
@@ -173,7 +177,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         return when {
             text.isEmpty() -> "Done."
             text.startsWith("[") -> {
-                val count = runCatching { JSONArray(text).length() }.getOrDefault(0)
+                val count = runCatchingCancellable { JSONArray(text).length() }.getOrDefault(0)
                 if (count == 0) "No files." else "$count file${if (count == 1) "" else "s"}."
             }
             else -> text.trim('"').take(200)
@@ -200,7 +204,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     suspend fun getActivity(
         startDate: String? = null,
         endDate: String? = null,
-    ): Result<List<ActivityItem>> = runCatching {
+    ): Result<List<ActivityItem>> = runCatchingCancellable {
         coroutineScope {
             val api = api()
             val names = vehicleNames(api)
@@ -241,7 +245,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     }
 
     /** All reminders across vehicles, soonest due first. */
-    suspend fun getAllReminders(): Result<List<ReminderItem>> = runCatching {
+    suspend fun getAllReminders(): Result<List<ReminderItem>> = runCatchingCancellable {
         coroutineScope {
             val api = api()
             val names = vehicleNames(api)
@@ -258,11 +262,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         }
     }
 
-    private fun parseDate(raw: String?): LocalDate? {
-        val d = raw?.substringBefore('T')?.substringBefore(' ')?.trim().orEmpty()
-        if (d.isEmpty()) return null
-        return DateFormats.firstNotNullOfOrNull { runCatching { LocalDate.parse(d, it) }.getOrNull() }
-    }
+    private fun parseDate(raw: String?): LocalDate? = DateParsing.parse(raw)
 
     /**
      * Sorts by the given date field, in the direction chosen in settings (default oldest-first).
@@ -287,7 +287,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
 
     // ---- Records: read ----
     suspend fun getRecords(area: RecordArea, vehicleId: String): Result<List<RecordRow>> =
-        runCatching {
+        runCatchingCancellable {
             val api = api()
             val unit = distanceSuffix()
             when (area) {
@@ -314,13 +314,13 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
      * on a new odometer record (LubeLogger's web UI carries the previous entry over the same way).
      */
     suspend fun latestOdometer(vehicleId: String): Result<Long?> =
-        runCatching {
+        runCatchingCancellable {
             api().getOdometerRecords(vehicleId).unwrap().mapNotNull { it.odometer }.maxOrNull()
         }
 
     /** Count + most-recent (or soonest-due, for reminders) date for a single area. */
     suspend fun getAreaSummary(area: RecordArea, vehicleId: String): Result<AreaSummary> =
-        runCatching {
+        runCatchingCancellable {
             val api = api()
             fun <T> List<T>.summarize(earliest: Boolean = false, date: (T) -> String?) =
                 AreaSummary(size, reduceDate(mapNotNull(date), earliest))
@@ -349,9 +349,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         if (clean.isEmpty()) return null
         var best: LocalDate? = null
         for (d in clean) {
-            val parsed = DateFormats.firstNotNullOfOrNull { fmt ->
-                runCatching { LocalDate.parse(d, fmt) }.getOrNull()
-            } ?: continue
+            val parsed = DateParsing.parse(d) ?: continue
             if (best == null || (if (earliest) parsed.isBefore(best) else parsed.isAfter(best))) {
                 best = parsed
             }
@@ -582,7 +580,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         area: RecordArea,
         vehicleId: String,
         fields: QueuedFields,
-    ): Result<Boolean> = runCatching {
+    ): Result<Boolean> = runCatchingCancellable {
         val api = api()
         when (area) {
             RecordArea.SERVICE -> api.getServiceRecords(vehicleId).unwrap().any {
@@ -609,14 +607,16 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
                 sameDate(it.date, fields.date) && sameLong(it.odometer, fields.odometer)
             }
             RecordArea.PLAN -> api.getPlanRecords(vehicleId).unwrap().any {
-                sameText(it.description, fields.description) && sameCost(it.cost, fields.cost)
+                sameText(it.description, fields.description) && sameCost(it.cost, fields.cost) &&
+                    sameText(it.type, fields.planType)
             }
             RecordArea.SUPPLY -> api.getSupplyRecords(vehicleId).unwrap().any {
                 sameDate(it.date, fields.date) && sameText(it.description, fields.description) &&
                     sameText(it.partNumber, fields.partNumber) && sameCost(it.cost, fields.cost)
             }
             RecordArea.REMINDER -> api.getReminders(vehicleId).unwrap().any {
-                sameText(it.description, fields.description) && sameDate(it.dueDate, fields.dueDate)
+                sameText(it.description, fields.description) && sameDate(it.dueDate, fields.dueDate) &&
+                    sameLong(it.dueOdometer, fields.dueOdometer) && sameText(it.metric, fields.metric)
             }
             RecordArea.EQUIPMENT -> api.getEquipmentRecords(vehicleId).unwrap().any {
                 sameText(it.description, fields.description)
@@ -647,7 +647,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         area: RecordArea,
         vehicleId: String,
         id: String,
-    ): Result<RecordEditData?> = runCatching {
+    ): Result<RecordEditData?> = runCatchingCancellable {
         val api = api()
         fun match(rowId: Long?) = rowId?.toString() == id
         when (area) {
@@ -683,7 +683,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         area: RecordArea,
         vehicleId: String,
         recordId: String,
-    ): Result<List<FileAttachmentResponse>> = runCatching {
+    ): Result<List<FileAttachmentResponse>> = runCatchingCancellable {
         val api = api()
         fun match(id: Long?) = id?.toString() == recordId
         when (area) {
@@ -707,7 +707,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         vehicleId: String,
         recordId: String,
         files: List<FileAttachment>,
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = runCatchingCancellable {
         val api = api()
         fun match(id: Long?) = id?.toString() == recordId
         fun <T> T?.orThrow(): T = this ?: throw IllegalStateException("Record no longer exists.")
@@ -753,13 +753,29 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         fileName: String,
         mimeType: String?,
         bytes: ByteArray,
-    ): Result<FileAttachment> = runCatching {
+    ): Result<FileAttachment> = runCatchingCancellable {
         val media = (mimeType ?: "application/octet-stream").toMediaTypeOrNull()
-        val part = MultipartBody.Part.createFormData("documents", fileName, bytes.toRequestBody(media))
+        finishUpload(MultipartBody.Part.createFormData("documents", fileName, bytes.toRequestBody(media)), fileName)
+    }
+
+    /**
+     * Streams [file] to the server rather than reading it into memory first, so full-resolution
+     * (uncompressed) receipt scans don't risk an out-of-memory crash on large images.
+     */
+    suspend fun uploadDocument(
+        file: File,
+        fileName: String,
+        mimeType: String?,
+    ): Result<FileAttachment> = runCatchingCancellable {
+        val media = (mimeType ?: "application/octet-stream").toMediaTypeOrNull()
+        finishUpload(MultipartBody.Part.createFormData("documents", fileName, file.asRequestBody(media)), fileName)
+    }
+
+    private suspend fun finishUpload(part: MultipartBody.Part, fileName: String): FileAttachment {
         val response = api().uploadDocuments(listOf(part))
         if (!response.isSuccessful) throw mapError(response.code(), response.errorBody()?.string())
         val body = response.body()?.string().orEmpty()
-        parseUploadedLocation(body, fileName)
+        return parseUploadedLocation(body, fileName)
             ?: throw IllegalStateException("Upload succeeded but no file location was returned.")
     }
 
@@ -772,7 +788,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     }
 
     /** Downloads an attachment's bytes using the authenticated client (off the main thread). */
-    suspend fun downloadAttachment(location: String): Result<ByteArray> = runCatching {
+    suspend fun downloadAttachment(location: String): Result<ByteArray> = runCatchingCancellable {
         val url = attachmentUrl(location) ?: throw IllegalStateException("Not connected.")
         val client = apiProvider.authenticatedImageClient()
         withContext(Dispatchers.IO) {
@@ -820,8 +836,3 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         throw mapError(code(), errorBody()?.string())
     }
 }
-
-/** Date layouts LubeLogger may emit depending on locale/culture settings. */
-private val DateFormats: List<DateTimeFormatter> = listOf(
-    "yyyy-MM-dd", "M/d/yyyy", "MM/dd/yyyy", "yyyy/MM/dd", "dd/MM/yyyy", "dd-MM-yyyy", "d.M.yyyy",
-).map { DateTimeFormatter.ofPattern(it) }

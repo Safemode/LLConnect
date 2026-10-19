@@ -5,12 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.RecordArea
 import com.safemode.llconnect.data.RecordRow
+import com.safemode.llconnect.ui.common.ReloadJob
 import com.safemode.llconnect.ui.common.UiState
 import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 
 class RecordsViewModel(
     val area: RecordArea,
@@ -24,26 +24,31 @@ class RecordsViewModel(
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
+    private val reloads = ReloadJob()
+
     init {
         load()
         refreshWhenServerReachable { reloadSilently() }
     }
 
     fun load() {
-        viewModelScope.launch { reload(showLoading = true) }
+        reloads.launch(viewModelScope) { reload(showLoading = true) }
     }
 
     /** Silent reload (e.g. when returning to the screen after add/edit/delete). */
     fun reloadSilently() {
-        viewModelScope.launch { reload(showLoading = false) }
+        reloads.launch(viewModelScope) { reload(showLoading = false) }
     }
 
     /** Pull-to-refresh: reload without replacing the list with a full-screen spinner. */
     fun refresh() {
-        viewModelScope.launch {
+        reloads.launch(viewModelScope) {
             _refreshing.value = true
-            reload(showLoading = false)
-            _refreshing.value = false
+            try {
+                reload(showLoading = false)
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 

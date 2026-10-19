@@ -36,7 +36,7 @@ class DailyNotificationWorker(
 
                 if (reachable && config.notifyReminders) {
                     Graph.repository.getAllReminders().onSuccess { reminders ->
-                        val lines = reminders.filter { isDue(it.urgency) }.map(::lineFor)
+                        val lines = reminders.filter { isReminderDue(it.urgency) }.map(::lineFor)
                         Notifications.postReminders(applicationContext, lines)
                     }
                 }
@@ -54,13 +54,6 @@ class DailyNotificationWorker(
 
     private fun lineFor(item: ReminderItem): String {
         val vehicle = item.vehicleName.ifBlank { "Vehicle" }
-        return "$vehicle — ${item.description}"
-    }
-
-    /** LubeLogger's server-computed urgency: notify on urgent / very urgent / past due. */
-    private fun isDue(urgency: String?): Boolean {
-        val u = urgency?.lowercase()?.replace(" ", "") ?: return false
-        if (u == "noturgent" || u == "notdue") return false
-        return "urgent" in u || "pastdue" in u || "overdue" in u
+        return "$vehicle - ${item.description}"
     }
 }

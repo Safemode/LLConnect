@@ -63,6 +63,7 @@ import com.safemode.llconnect.data.remote.models.PlanRecordRequest
 import com.safemode.llconnect.data.remote.models.ReminderRecordRequest
 import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
 import com.safemode.llconnect.data.remote.models.TaxRecordRequest
+import com.safemode.llconnect.data.NumberParsing
 import com.safemode.llconnect.ui.common.DateField
 import com.safemode.llconnect.ui.common.DropdownField
 import com.safemode.llconnect.ui.scan.ScanReceiptScreen
@@ -260,32 +261,35 @@ fun RecordFormScreen(
                 error = null
                 scope.launch {
                     val file = File(path)
-                    val bytes = runCatching { file.readBytes() }.getOrNull()
-                    if (bytes == null) {
+                    if (!file.exists()) {
                         error = "Couldn't read the scanned image."
                     } else {
                         // The scanner names the cache file with the encoded format's extension
                         // (jpg when compressed, png when full quality); mirror it in the upload.
+                        // The file is streamed or moved, never read into memory, so a full-quality
+                        // scan can't exhaust memory here.
                         val ext = path.substringAfterLast('.', "jpg").lowercase()
                         val mime = if (ext == "png") "image/png" else "image/jpeg"
                         val taken = (attachments.mapNotNull { it.name } + pendingImages.map { it.fileName })
                             .map { it.lowercase() }.toSet()
                         val name = receiptFileName(date, area, odometer, taken, ext)
                         if (Graph.serverStatus.isReachable()) {
-                            Graph.repository.uploadDocument(name, mime, bytes).fold(
-                                onSuccess = { attachments = attachments + it },
+                            Graph.repository.uploadDocument(file, name, mime).fold(
+                                onSuccess = {
+                                    attachments = attachments + it
+                                    runCatching { file.delete() }
+                                },
                                 onFailure = {
-                                    // Likely just lost the server — stage it locally so it uploads
+                                    // Likely just lost the server - stage it locally so it uploads
                                     // with the record once it flushes from the queue.
                                     pendingImages = pendingImages +
-                                        Graph.offlineQueue.stageImage(bytes, name, mime)
+                                        Graph.offlineQueue.stageImageFile(file, name, mime)
                                 },
                             )
                         } else {
                             pendingImages = pendingImages +
-                                Graph.offlineQueue.stageImage(bytes, name, mime)
+                                Graph.offlineQueue.stageImageFile(file, name, mime)
                         }
-                        runCatching { file.delete() }
                     }
                     scanUploading = false
                 }
@@ -440,7 +444,7 @@ fun RecordFormScreen(
             if (showGas) {
                 OutlinedTextField(
                     value = fuelConsumed,
-                    onValueChange = { fuelConsumed = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = { fuelConsumed = it.filter(NumberParsing::isDecimalInputChar) },
                     label = { Text("Fuel consumed") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -453,7 +457,7 @@ fun RecordFormScreen(
             if (showCost) {
                 OutlinedTextField(
                     value = cost,
-                    onValueChange = { cost = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = { cost = it.filter(NumberParsing::isDecimalInputChar) },
                     label = { Text("Cost") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -519,6 +523,15 @@ fun RecordFormScreen(
                     submitting = true
                     scope.launch {
                         if (isEdit) {
+                            // Re-fetch the record's current attachments and custom fields right
+                            // before saving. The update replaces the whole record, so using the
+                            // snapshot loaded when the form opened would wipe anything changed
+                            // elsewhere in the meantime (e.g. attachments added from the Attachments
+                            // screen). The user's edited fields still take precedence.
+                            val latest = Graph.repository
+                                .getRecordForEdit(area, vehicleId, recordId).getOrNull()
+                            val latestFiles = latest?.files ?: attachments
+                            val latestExtra = latest?.extraFields ?: extraFields
                             val result = submit(
                                 area = area,
                                 vehicleId = vehicleId,
@@ -528,8 +541,8 @@ fun RecordFormScreen(
                                     odometer = odometer.toLongOrNull(),
                                     initialOdometer = initialOdometer.toLongOrNull(),
                                     description = description.ifBlank { null },
-                                    cost = cost.toDoubleOrNull(),
-                                    fuelConsumed = fuelConsumed.toDoubleOrNull(),
+                                    cost = NumberParsing.parseDecimal(cost),
+                                    fuelConsumed = NumberParsing.parseDecimal(fuelConsumed),
                                     isFillToFull = isFillToFull,
                                     missedFuelUp = missedFuelUp,
                                     // Send empty strings rather than null so notes/tags are always
@@ -548,8 +561,8 @@ fun RecordFormScreen(
                                     isEquipped = isEquipped,
                                     noteText = noteText.ifBlank { null },
                                     pinned = pinned,
-                                    files = attachments,
-                                    extraFields = extraFields,
+                                    files = latestFiles,
+                                    extraFields = latestExtra,
                                 ),
                             )
                             submitting = false
@@ -566,8 +579,8 @@ fun RecordFormScreen(
                             odometer = odometer.toLongOrNull(),
                             initialOdometer = initialOdometer.toLongOrNull(),
                             description = description.ifBlank { null },
-                            cost = cost.toDoubleOrNull(),
-                            fuelConsumed = fuelConsumed.toDoubleOrNull(),
+                            cost = NumberParsing.parseDecimal(cost),
+                            fuelConsumed = NumberParsing.parseDecimal(fuelConsumed),
                             isFillToFull = isFillToFull,
                             missedFuelUp = missedFuelUp,
                             notes = notes,

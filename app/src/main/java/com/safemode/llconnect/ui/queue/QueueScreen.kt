@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.queue.QueuedEntry
+import com.safemode.llconnect.data.queue.queuedForCurrentServer
 import com.safemode.llconnect.data.remote.ServerReachability
 import com.safemode.llconnect.ui.common.EmptyState
 import kotlinx.coroutines.flow.map
@@ -49,8 +50,8 @@ fun QueueScreen(
     val entries by viewModel.entries.collectAsStateWithLifecycle()
     val flushing by viewModel.flushing.collectAsStateWithLifecycle()
     val serverState by viewModel.serverState.collectAsStateWithLifecycle()
-    val distanceUnit by Graph.settingsRepository.config
-        .map { it.distanceUnit.suffix }
+    val distanceUnitFlow = remember { Graph.settingsRepository.config.map { it.distanceUnit.suffix } }
+    val distanceUnit by distanceUnitFlow
         .collectAsStateWithLifecycle(initialValue = Graph.apiProvider.currentConfig().distanceUnit.suffix)
 
     var pendingDelete by remember { mutableStateOf<QueuedEntry?>(null) }
@@ -80,10 +81,12 @@ fun QueueScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                val currentServer = Graph.apiProvider.currentConfig().baseUrl()
                 items(entries, key = { it.id }) { entry ->
                     QueuedEntryCard(
                         entry = entry,
                         distanceUnit = distanceUnit,
+                        otherServer = !queuedForCurrentServer(entry.serverId, currentServer),
                         onDelete = { pendingDelete = entry },
                     )
                 }
@@ -175,6 +178,7 @@ private fun QueueHeader(
 private fun QueuedEntryCard(
     entry: QueuedEntry,
     distanceUnit: String,
+    otherServer: Boolean,
     onDelete: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -206,6 +210,15 @@ private fun QueuedEntryCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                if (otherServer) {
+                    Text(
+                        text = "Saved for a different server - will upload when that server is " +
+                            "configured again.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 entry.lastError?.let {
                     Text(
                         text = it,

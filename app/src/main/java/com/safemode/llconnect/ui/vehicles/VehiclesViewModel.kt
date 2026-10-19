@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.data.settings.ConnectionConfig
+import com.safemode.llconnect.ui.common.ReloadJob
 import com.safemode.llconnect.ui.common.UiState
 import com.safemode.llconnect.ui.common.refreshWhenServerReachable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +30,8 @@ class VehiclesViewModel : ViewModel() {
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    private val reloads = ReloadJob()
 
     /** Id of the single favorite vehicle, or blank if none. */
     val favoriteVehicleId: StateFlow<String> = settings.config
@@ -56,20 +59,23 @@ class VehiclesViewModel : ViewModel() {
 
     /** Manual retry using the latest saved config. */
     fun load() {
-        viewModelScope.launch { reload(settings.config.first()) }
+        reloads.launch(viewModelScope) { reload(settings.config.first()) }
     }
 
     /** Quietly re-fetch (e.g. when returning to the screen after add/edit/delete). */
     fun reloadSilently() {
-        viewModelScope.launch { reload(settings.config.first(), showLoading = false) }
+        reloads.launch(viewModelScope) { reload(settings.config.first(), showLoading = false) }
     }
 
     /** Pull-to-refresh: reload from the server, showing the refresh indicator. */
     fun refresh() {
-        viewModelScope.launch {
+        reloads.launch(viewModelScope) {
             _refreshing.value = true
-            reload(settings.config.first(), showLoading = false)
-            _refreshing.value = false
+            try {
+                reload(settings.config.first(), showLoading = false)
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 
