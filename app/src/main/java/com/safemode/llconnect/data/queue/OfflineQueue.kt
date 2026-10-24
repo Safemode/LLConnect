@@ -95,6 +95,10 @@ class OfflineQueue(
             QueuedAttachment(fileName = fileName, mimeType = mimeType, localFileName = localName)
         }
 
+    /** The on-disk file behind a staged image, or null if it isn't a staged attachment. */
+    fun stagedFile(attachment: QueuedAttachment): File? =
+        attachment.localFileName?.let { File(stagingDir, it) }
+
     /** Discards a staged image the user removed before saving. */
     suspend fun discardStaged(attachment: QueuedAttachment) = withContext(Dispatchers.IO) {
         attachment.localFileName?.let { File(stagingDir, it).delete() }
