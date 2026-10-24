@@ -63,6 +63,7 @@ import com.safemode.llconnect.data.remote.models.PlanRecordRequest
 import com.safemode.llconnect.data.remote.models.ReminderRecordRequest
 import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
 import com.safemode.llconnect.data.remote.models.TaxRecordRequest
+import com.safemode.llconnect.data.AttachmentMerge
 import com.safemode.llconnect.data.NumberParsing
 import com.safemode.llconnect.ui.common.DateField
 import com.safemode.llconnect.ui.common.DropdownField
@@ -158,9 +159,12 @@ fun RecordFormScreen(
     var pinned by remember { mutableStateOf(false) }
     // Not user-editable here, but preserved so an update doesn't wipe them server-side.
     var attachments by remember { mutableStateOf<List<FileAttachment>>(emptyList()) }
+    // The attachments as loaded when an edit opened, so a save can tell what the user added or
+    // removed here apart from what changed on the server since.
+    var loadedAttachments by remember { mutableStateOf<List<FileAttachment>>(emptyList()) }
     var extraFields by remember { mutableStateOf<List<ExtraField>?>(null) }
-    // Receipts scanned while the server is unreachable: held locally (staged) and uploaded with
-    // the record when it's flushed from the offline queue. Only used for new records.
+    // Receipts whose upload couldn't happen right away: held locally (staged). A new record uploads
+    // them when it's flushed from the offline queue; an edit uploads them when it's saved.
     var pendingImages by remember { mutableStateOf<List<QueuedAttachment>>(emptyList()) }
     // Snapshot of the vehicle's name, so a queued entry reads well even while the server is down.
     var vehicleName by remember { mutableStateOf("") }
@@ -203,6 +207,7 @@ fun RecordFormScreen(
                     noteText = data.noteText.orEmpty()
                     pinned = data.pinned ?: false
                     attachments = data.files
+                    loadedAttachments = data.files
                     extraFields = data.extraFields
                 } else {
                     error = "Could not load this record for editing."
@@ -523,14 +528,38 @@ fun RecordFormScreen(
                     submitting = true
                     scope.launch {
                         if (isEdit) {
-                            // Re-fetch the record's current attachments and custom fields right
-                            // before saving. The update replaces the whole record, so using the
-                            // snapshot loaded when the form opened would wipe anything changed
-                            // elsewhere in the meantime (e.g. attachments added from the Attachments
-                            // screen). The user's edited fields still take precedence.
+                            // Edits are online-only, so any receipt that was staged because its
+                            // upload failed must go up now, before the record is saved.
+                            for (pending in pendingImages) {
+                                val file = Graph.offlineQueue.stagedFile(pending)
+                                val uploaded = if (file != null && file.exists()) {
+                                    Graph.repository.uploadDocument(file, pending.fileName, pending.mimeType)
+                                } else {
+                                    Result.failure(IllegalStateException("The scanned image is missing."))
+                                }
+                                uploaded.fold(
+                                    onSuccess = {
+                                        attachments = attachments + it
+                                        pendingImages = pendingImages - pending
+                                        Graph.offlineQueue.discardStaged(pending)
+                                    },
+                                    onFailure = {
+                                        error = "Couldn't upload the scanned receipt: ${it.message}"
+                                        submitting = false
+                                        return@launch
+                                    },
+                                )
+                            }
+
+                            // Re-fetch the record right before saving. The update replaces the whole
+                            // record, so the form's loaded snapshot would wipe anything changed
+                            // elsewhere in the meantime. Attachments are merged: the server's
+                            // current list, plus scans added here, minus files removed here.
                             val latest = Graph.repository
                                 .getRecordForEdit(area, vehicleId, recordId).getOrNull()
-                            val latestFiles = latest?.files ?: attachments
+                            val latestFiles = latest?.files
+                                ?.let { AttachmentMerge.merge(loadedAttachments, attachments, it) }
+                                ?: attachments
                             val latestExtra = latest?.extraFields ?: extraFields
                             val result = submit(
                                 area = area,
