@@ -40,6 +40,7 @@ class SettingsRepository(private val context: Context) {
         val NOTIFY_REMINDERS = booleanPreferencesKey("notify_reminders")
         val NOTIFY_QUEUE = booleanPreferencesKey("notify_queue")
         val FULL_QUALITY_AREAS = stringSetPreferencesKey("full_quality_areas")
+        val AUTO_DETECT_DOCUMENTS = booleanPreferencesKey("auto_detect_documents")
     }
 
     val config: Flow<ConnectionConfig> = context.dataStore.data.map { prefs ->
@@ -74,6 +75,7 @@ class SettingsRepository(private val context: Context) {
             notifyReminders = prefs[Keys.NOTIFY_REMINDERS] ?: false,
             notifyQueue = prefs[Keys.NOTIFY_QUEUE] ?: false,
             fullQualityAreas = prefs[Keys.FULL_QUALITY_AREAS] ?: emptySet(),
+            autoDetectDocuments = prefs[Keys.AUTO_DETECT_DOCUMENTS] ?: true,
         )
     }
 
@@ -98,7 +100,13 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.NOTIFY_REMINDERS] = config.notifyReminders
             prefs[Keys.NOTIFY_QUEUE] = config.notifyQueue
             prefs[Keys.FULL_QUALITY_AREAS] = config.fullQualityAreas
+            prefs[Keys.AUTO_DETECT_DOCUMENTS] = config.autoDetectDocuments
         }
+    }
+
+    /** Turns the scanner's automatic document detection on or off without touching anything else. */
+    suspend fun setAutoDetectDocuments(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[Keys.AUTO_DETECT_DOCUMENTS] = enabled }
     }
 
     /**
