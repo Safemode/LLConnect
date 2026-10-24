@@ -74,6 +74,8 @@ data class ConnectionConfig(
      * Any area not listed uses the default compressed JPEG. Empty by default.
      */
     val fullQualityAreas: Set<String> = emptySet(),
+    /** Detect and crop the receipt automatically in the scanner (toggled from the camera screen). */
+    val autoDetectDocuments: Boolean = true,
 ) {
     /** True when any notification type is enabled (drives scheduling the daily worker). */
     val anyNotificationEnabled: Boolean

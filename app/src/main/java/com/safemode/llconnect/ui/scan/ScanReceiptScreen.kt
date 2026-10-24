@@ -8,7 +8,9 @@ import android.graphics.Matrix
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.AspectRatio
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -21,6 +23,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +35,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -59,25 +65,46 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.scan.DocumentDetector
 import com.safemode.llconnect.data.scan.ReceiptImage
 import com.safemode.llconnect.data.scan.ReceiptQuality
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlin.math.hypot
 import kotlin.math.min
 
 /** How long the detected boundary box lingers after detection drops out, to avoid flicker. */
 private const val BOX_HOLD_MS = 500L
+
+/** How long a tap-to-focus holds before the camera returns to continuous autofocus. */
+private const val FOCUS_HOLD_SECONDS = 5L
+
+/** How long the focus ring stays on screen after a tap. */
+private const val FOCUS_RING_MS = 1_000L
+
+/**
+ * Two detections whose corners are, on average, within this share of the frame diagonal are
+ * treated as the same outline and smoothed together.
+ */
+private const val SAME_SHAPE_FRACTION = 0.08f
+
+/** Average distance between corresponding corners of two ordered quads ([x0,y0,...,x3,y3]). */
+private fun meanCornerDistance(a: FloatArray, b: FloatArray): Float =
+    (0 until 4).map { i -> hypot(a[i * 2] - b[i * 2], a[i * 2 + 1] - b[i * 2 + 1]) }.average().toFloat()
 
 /**
  * Camera screen that captures a receipt, flattens it with OpenCV document detection, and hands
@@ -145,6 +172,21 @@ fun ScanReceiptScreen(
     var frameW by remember { mutableIntStateOf(0) }
     var frameH by remember { mutableIntStateOf(0) }
 
+    // Automatic document detection (live box + crop on capture). Remembered across scans; when
+    // off, nothing runs per frame and the capture is kept as the full photo.
+    var autoDetect by remember { mutableStateOf(Graph.apiProvider.currentConfig().autoDetectDocuments) }
+
+    // The bound camera, used for tap-to-focus; null until the camera has started.
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    // Where the user last tapped to focus, shown as a ring until it fades.
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    LaunchedEffect(focusPoint) {
+        if (focusPoint != null) {
+            delay(FOCUS_RING_MS)
+            focusPoint = null
+        }
+    }
+
     var review by remember { mutableStateOf<Bitmap?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -160,15 +202,24 @@ fun ScanReceiptScreen(
         if (!hasPermission) return@LaunchedEffect
         imageAnalysis.setAnalyzer(analysisExecutor) { proxy ->
             try {
+                if (!autoDetect) {
+                    quad = null
+                    return@setAnalyzer
+                }
                 val upright = rotate(proxy.toBitmap(), proxy.imageInfo.rotationDegrees)
                 val detected = DocumentDetector.detectQuad(upright)
                 val now = System.currentTimeMillis()
                 if (detected != null) {
                     frameW = upright.width
                     frameH = upright.height
-                    // Exponential smoothing against the previous box to damp corner wobble.
+                    // Smooth against the previous box to damp corner wobble, but only when it's the
+                    // same outline. When detection switches to a different shape, snap to it;
+                    // averaging two unrelated quads gives a box that matches neither.
                     val prev = quad
-                    quad = if (prev != null && prev.size == 8) {
+                    val sameShape = prev != null && prev.size == 8 &&
+                        meanCornerDistance(prev, detected) <
+                        SAME_SHAPE_FRACTION * hypot(upright.width.toFloat(), upright.height.toFloat())
+                    quad = if (sameShape) {
                         FloatArray(8) { i -> prev[i] * 0.5f + detected[i] * 0.5f }
                     } else {
                         detected
@@ -189,7 +240,7 @@ fun ScanReceiptScreen(
             .also { it.setSurfaceProvider(previewView.surfaceProvider) }
         runCatching {
             provider.unbindAll()
-            provider.bindToLifecycle(
+            camera = provider.bindToLifecycle(
                 lifecycleOwner,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
@@ -206,6 +257,28 @@ fun ScanReceiptScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Shown only while capturing; the review screen has nothing to detect.
+                    if (hasPermission && review == null) {
+                        IconToggleButton(
+                            checked = autoDetect,
+                            onCheckedChange = { enabled ->
+                                autoDetect = enabled
+                                if (!enabled) quad = null
+                                scope.launch { Graph.settingsRepository.setAutoDetectDocuments(enabled) }
+                            },
+                        ) {
+                            Icon(
+                                if (autoDetect) Icons.Filled.DocumentScanner else Icons.Outlined.DocumentScanner,
+                                contentDescription = if (autoDetect) {
+                                    "Turn off automatic document detection"
+                                } else {
+                                    "Turn on automatic document detection"
+                                },
+                            )
+                        }
                     }
                 },
             )
@@ -243,10 +316,25 @@ fun ScanReceiptScreen(
                     frameW = frameW,
                     frameH = frameH,
                     busy = busy,
+                    autoDetect = autoDetect,
+                    focusPoint = focusPoint,
+                    onTapFocus = { tap ->
+                        // Focus and meter on the tapped spot; after a few seconds the camera
+                        // returns to continuous autofocus.
+                        val cam = camera ?: return@CapturePane
+                        val point = previewView.meteringPointFactory.createPoint(tap.x, tap.y)
+                        val action = FocusMeteringAction.Builder(
+                            point,
+                            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE,
+                        ).setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS).build()
+                        cam.cameraControl.startFocusAndMetering(action)
+                        focusPoint = tap
+                    },
                     onCapture = {
                         busy = true
                         error = null
                         // Snapshot the live detection so the still is cropped to the box on screen.
+                        val detect = autoDetect
                         val liveQuad = quad
                         val liveW = frameW
                         val liveH = frameH
@@ -259,7 +347,8 @@ fun ScanReceiptScreen(
                                     image.close()
                                     scope.launch {
                                         val flattened = withContext(Dispatchers.Default) {
-                                            flattenCapture(raw, degrees, liveQuad, liveW, liveH)
+                                            if (detect) flattenCapture(raw, degrees, liveQuad, liveW, liveH)
+                                            else rotate(raw, degrees)
                                         }
                                         review = flattened
                                         busy = false
@@ -296,14 +385,30 @@ private fun CapturePane(
     frameW: Int,
     frameH: Int,
     busy: Boolean,
+    autoDetect: Boolean,
+    focusPoint: Offset?,
+    onTapFocus: (Offset) -> Unit,
     onCapture: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
 
         // Boundary box over the preview, mapping upright frame coordinates to the view with the
-        // same FIT_CENTER math the PreviewView uses.
-        Canvas(modifier = Modifier.matchParentSize()) {
+        // same FIT_CENTER math the PreviewView uses. It also takes the focus taps, since it sits
+        // on top of the preview with the same size (so tap offsets are preview coordinates).
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .pointerInput(Unit) { detectTapGestures(onTap = onTapFocus) },
+        ) {
+            focusPoint?.let { center ->
+                drawCircle(
+                    color = Color.White,
+                    radius = 36.dp.toPx(),
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+            }
             val q = quad ?: return@Canvas
             if (frameW <= 0 || frameH <= 0) return@Canvas
             val scale = min(size.width / frameW, size.height / frameH)
@@ -328,6 +433,17 @@ private fun CapturePane(
                     .align(Alignment.TopCenter)
                     .padding(top = 12.dp)
                     .background(Color(0xFF4CAF50), MaterialTheme.shapes.small)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        } else {
+            Text(
+                text = if (autoDetect) "Tap the receipt to focus"
+                else "Detection off - the full photo is kept. Tap to focus.",
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), MaterialTheme.shapes.small)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
             )
         }
