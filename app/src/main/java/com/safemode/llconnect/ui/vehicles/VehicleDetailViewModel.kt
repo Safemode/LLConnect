@@ -30,9 +30,6 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
     private val _summaries = MutableStateFlow<Map<RecordArea, AreaSummary>>(emptyMap())
     val summaries: StateFlow<Map<RecordArea, AreaSummary>> = _summaries.asStateFlow()
 
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
-
     private val _deleting = MutableStateFlow(false)
     val deleting: StateFlow<Boolean> = _deleting.asStateFlow()
 
@@ -43,6 +40,7 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
     val actionError: StateFlow<String?> = _actionError.asStateFlow()
 
     private val reloads = ReloadJob()
+    val refreshing: StateFlow<Boolean> = reloads.refreshing
 
     init {
         load()
@@ -75,13 +73,9 @@ class VehicleDetailViewModel(private val vehicleId: String) : ViewModel() {
 
     /** Pull-to-refresh. */
     fun refresh() {
-        reloads.launch(viewModelScope) {
-            _refreshing.value = true
-            try {
-                reload(showLoading = false)
-            } finally {
-                _refreshing.value = false
-            }
+        reloads.launch(viewModelScope, refresh = true) {
+            Graph.probeIfUnreachable()
+            reload(showLoading = false)
         }
     }
 

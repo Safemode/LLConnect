@@ -21,10 +21,8 @@ class RecordsViewModel(
     private val _state = MutableStateFlow<UiState<List<RecordRow>>>(UiState.Loading)
     val state: StateFlow<UiState<List<RecordRow>>> = _state.asStateFlow()
 
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
-
     private val reloads = ReloadJob()
+    val refreshing: StateFlow<Boolean> = reloads.refreshing
 
     init {
         load()
@@ -42,13 +40,9 @@ class RecordsViewModel(
 
     /** Pull-to-refresh: reload without replacing the list with a full-screen spinner. */
     fun refresh() {
-        reloads.launch(viewModelScope) {
-            _refreshing.value = true
-            try {
-                reload(showLoading = false)
-            } finally {
-                _refreshing.value = false
-            }
+        reloads.launch(viewModelScope, refresh = true) {
+            Graph.probeIfUnreachable()
+            reload(showLoading = false)
         }
     }
 

@@ -126,6 +126,18 @@ object Graph {
         }
     }
 
+    /**
+     * Re-checks the server now when it isn't confirmed reachable. Used before a pull-to-refresh:
+     * while the status is unreachable or still checking, GETs are served from cache without a
+     * connect attempt, so without this the refresh would only re-read the cache until the
+     * background probe's backoff (up to a minute) next fires.
+     */
+    suspend fun probeIfUnreachable() = withContext(Dispatchers.IO) {
+        if (networkMonitor.isOnline() && !serverStatus.isReachable()) {
+            serverStatus.report(apiProvider.probeReachable())
+        }
+    }
+
     private const val PROBE_MIN_BACKOFF_MS = 5_000L
     private const val PROBE_MAX_BACKOFF_MS = 60_000L
 }
