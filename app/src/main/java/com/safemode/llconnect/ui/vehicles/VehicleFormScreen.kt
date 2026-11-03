@@ -26,14 +26,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.remote.models.ExtraField
 import com.safemode.llconnect.data.remote.models.Vehicle
@@ -41,7 +42,6 @@ import com.safemode.llconnect.data.remote.models.VehicleAddRequest
 import com.safemode.llconnect.data.remote.models.VehicleUpdateRequest
 import com.safemode.llconnect.ui.common.FuelTypeField
 import com.safemode.llconnect.ui.common.NullableExtraFieldListSaver
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,10 +50,11 @@ fun VehicleFormScreen(
     onBack: () -> Unit,
 ) {
     val isEdit = vehicleId.isNotBlank()
-    val scope = rememberCoroutineScope()
 
-    // Saveable so rotation or a theme change doesn't wipe what's been typed. `submitting` stays
-    // plain remember: the save coroutine it tracks doesn't survive recreation.
+    // Saveable so rotation or a theme change doesn't wipe what's been typed. The save itself runs
+    // in [VehicleFormViewModel], so it carries on through a recreation instead of being cancelled.
+    val formViewModel: VehicleFormViewModel = viewModel(key = "vehicle-form-$vehicleId")
+    val submitting by formViewModel.saving.collectAsStateWithLifecycle()
     var year by rememberSaveable { mutableStateOf("") }
     var make by rememberSaveable { mutableStateOf("") }
     var model by rememberSaveable { mutableStateOf("") }
@@ -68,8 +69,17 @@ fun VehicleFormScreen(
 
     var editLoaded by rememberSaveable { mutableStateOf(false) }
     var loading by rememberSaveable { mutableStateOf(isEdit) }
-    var submitting by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val currentOnBack by rememberUpdatedState(onBack)
+    LaunchedEffect(formViewModel) {
+        formViewModel.results.collect { result ->
+            result.fold(
+                onSuccess = { currentOnBack() },
+                onFailure = { error = it.message ?: "Couldn't save the vehicle." },
+            )
+        }
+    }
 
     LaunchedEffect(vehicleId) {
         if (!isEdit || editLoaded) return@LaunchedEffect
@@ -168,39 +178,31 @@ fun VehicleFormScreen(
             Button(
                 onClick = {
                     error = null
-                    submitting = true
-                    scope.launch {
-                        val result = if (isEdit) {
-                            Graph.repository.updateVehicle(
-                                VehicleUpdateRequest(
-                                    id = vehicleId.toLongOrNull() ?: 0L,
-                                    year = year.toLongOrNull(),
-                                    make = make.ifBlank { null },
-                                    model = model.ifBlank { null },
-                                    identifier = identifier,
-                                    licensePlate = licensePlate.ifBlank { null },
-                                    fuelType = fuelType,
-                                    tags = tags.ifBlank { null },
-                                    extraFields = extraFields,
-                                ),
-                            )
-                        } else {
-                            Graph.repository.addVehicle(
-                                VehicleAddRequest(
-                                    year = year.toLongOrNull(),
-                                    make = make.ifBlank { null },
-                                    model = model.ifBlank { null },
-                                    identifier = identifier,
-                                    licensePlate = licensePlate.ifBlank { null },
-                                    fuelType = fuelType,
-                                    tags = tags.ifBlank { null },
-                                ),
-                            )
-                        }
-                        submitting = false
-                        result.fold(
-                            onSuccess = { onBack() },
-                            onFailure = { error = it.message },
+                    if (isEdit) {
+                        formViewModel.update(
+                            VehicleUpdateRequest(
+                                id = vehicleId.toLongOrNull() ?: 0L,
+                                year = year.toLongOrNull(),
+                                make = make.ifBlank { null },
+                                model = model.ifBlank { null },
+                                identifier = identifier,
+                                licensePlate = licensePlate.ifBlank { null },
+                                fuelType = fuelType,
+                                tags = tags.ifBlank { null },
+                                extraFields = extraFields,
+                            ),
+                        )
+                    } else {
+                        formViewModel.add(
+                            VehicleAddRequest(
+                                year = year.toLongOrNull(),
+                                make = make.ifBlank { null },
+                                model = model.ifBlank { null },
+                                identifier = identifier,
+                                licensePlate = licensePlate.ifBlank { null },
+                                fuelType = fuelType,
+                                tags = tags.ifBlank { null },
+                            ),
                         )
                     }
                 },
