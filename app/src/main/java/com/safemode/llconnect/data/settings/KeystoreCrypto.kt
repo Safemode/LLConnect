@@ -44,10 +44,23 @@ object KeystoreCrypto {
         }
     }
 
+    // Last few decryptions, keyed by ciphertext. The config flow re-maps every field on each
+    // DataStore change, and without this every emission would go through the Keystore again.
+    private val recent = object : LinkedHashMap<String, String>(4, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>) = size > 4
+    }
+
     /** Decrypts a value produced by [encrypt]. Unprefixed (legacy plaintext) values return as-is. */
     fun decrypt(stored: String): String {
         if (stored.isBlank()) return ""
         if (!stored.startsWith(PREFIX)) return stored // legacy plaintext
+        synchronized(recent) { recent[stored] }?.let { return it }
+        return decryptUncached(stored).also { plain ->
+            if (plain.isNotEmpty()) synchronized(recent) { recent[stored] = plain }
+        }
+    }
+
+    private fun decryptUncached(stored: String): String {
         return try {
             val combined = Base64.decode(stored.removePrefix(PREFIX), Base64.NO_WRAP)
             val iv = combined.copyOfRange(0, IV_LENGTH)

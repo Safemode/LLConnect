@@ -328,7 +328,7 @@ private fun ConnectivityBanner(state: ServerReachability) {
         ServerReachability.UNREACHABLE -> ConnectivityBar(
             background = MaterialTheme.colorScheme.error,
             foreground = MaterialTheme.colorScheme.onError,
-            text = "Server unreachable — showing cached data if available",
+            text = "Server unreachable - showing cached data if available",
         ) {
             Icon(
                 imageVector = Icons.Filled.CloudOff,

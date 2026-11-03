@@ -141,7 +141,7 @@ private fun QueueHeader(
         flushing -> "Uploading…"
         serverState == ServerReachability.REACHABLE -> "Server reachable"
         serverState == ServerReachability.CHECKING -> "Checking server…"
-        else -> "Server unreachable — will upload when it's back"
+        else -> "Server unreachable - will upload when it's back"
     }
     Row(
         modifier = Modifier

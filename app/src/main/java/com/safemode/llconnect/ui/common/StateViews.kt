@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.safemode.llconnect.data.RecordArea
 
 @Composable
 fun LoadingState(modifier: Modifier = Modifier) {
@@ -104,4 +105,21 @@ fun ErrorState(
             }
         }
     }
+}
+
+/**
+ * Says which record types couldn't be loaded when a cross-vehicle screen shows partial data.
+ * Shows nothing when [areas] is empty.
+ */
+@Composable
+fun UnavailableAreasNotice(areas: List<RecordArea>, modifier: Modifier = Modifier) {
+    if (areas.isEmpty()) return
+    val labels = areas.map { it.label }
+    val joined = if (labels.size == 1) labels[0] else labels.dropLast(1).joinToString(", ") + " and " + labels.last()
+    Text(
+        text = "Couldn't load $joined records, so they're missing here. Pull to refresh to try again.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.error,
+        modifier = modifier,
+    )
 }

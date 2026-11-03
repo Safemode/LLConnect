@@ -91,17 +91,30 @@ data class ConnectionConfig(
             AuthMode.BASIC -> basicUsername.isNotBlank()
         }
 
-    /** Normalized base URL with trailing slash, e.g. https://10.0.0.5:8080/ */
+    /**
+     * Normalized base URL with trailing slash, e.g. https://10.0.0.5:8080/. The host field may
+     * carry a sub-path for a server behind a reverse proxy (lube.example.com/lubelogger), which
+     * goes after the port, and a bare IPv6 address, which gets the brackets a URL needs.
+     */
     fun baseUrl(): String {
-        var h = host.trim()
+        val trimmed = host.trim()
             .removePrefix("http://")
             .removePrefix("https://")
             .trimEnd('/')
-        val portPart = port.trim().takeIf { it.isNotBlank() }?.let { ":$it" } ?: ""
-        // If the host already contains a port, don't append another.
-        if (h.substringAfterLast(':', "").toIntOrNull() != null && portPart.isNotEmpty()) {
-            h = h.substringBeforeLast(':')
+        var authority = trimmed.substringBefore('/')
+        val path = trimmed.substringAfter('/', "").trim('/')
+        val explicitPort = port.trim()
+        // A port typed into the host field is dropped when the Port field is set, so it isn't doubled.
+        if (explicitPort.isNotEmpty()) {
+            authority = when {
+                authority.startsWith("[") -> authority.substringBefore(']') + "]"
+                authority.count { it == ':' } == 1 -> authority.substringBefore(':')
+                else -> authority
+            }
         }
-        return "$scheme://$h$portPart/"
+        if (authority.count { it == ':' } > 1 && !authority.startsWith("[")) authority = "[$authority]"
+        val portPart = if (explicitPort.isNotEmpty()) ":$explicitPort" else ""
+        val pathPart = if (path.isNotEmpty()) "$path/" else ""
+        return "$scheme://$authority$portPart/$pathPart"
     }
 }

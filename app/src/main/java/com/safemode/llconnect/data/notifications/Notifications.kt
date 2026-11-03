@@ -86,10 +86,11 @@ object Notifications {
         )
     }
 
-    fun postQueueResult(context: Context, uploaded: Int, failed: Int) {
-        if (uploaded == 0 && failed == 0) return
+    fun postQueueResult(context: Context, uploaded: Int, failed: Int, alreadyOnServer: Int = 0) {
+        if (uploaded == 0 && failed == 0 && alreadyOnServer == 0) return
         val parts = buildList {
             if (uploaded > 0) add("$uploaded uploaded")
+            if (alreadyOnServer > 0) add("$alreadyOnServer already on the server")
             if (failed > 0) add("$failed failed")
         }
         post(

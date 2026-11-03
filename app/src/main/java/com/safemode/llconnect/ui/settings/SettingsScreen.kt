@@ -93,8 +93,10 @@ fun SettingsScreen(
     // Persist a notification-pref change, reschedule the daily worker from the new config, and
     // request the notification permission the first time a type is turned on.
     fun onNotifyChange(enabling: Boolean, transform: (ConnectionConfig) -> ConnectionConfig) {
-        viewModel.updateAndSave(transform)
-        NotificationScheduler.schedule(context, viewModel.config.value)
+        viewModel.updateAndSave(
+            onSaved = { NotificationScheduler.schedule(context.applicationContext, it) },
+            transform = transform,
+        )
         if (enabling && needsNotificationPermission()) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -325,8 +327,9 @@ fun SettingsScreen(
                 is24Hour = DateFormat.is24HourFormat(context),
                 onConfirm = { h, m ->
                     val value = String.format(Locale.US, "%02d:%02d", h, m)
-                    viewModel.updateAndSave { it.copy(odometerReminderTime = value) }
-                    NotificationScheduler.schedule(context, viewModel.config.value)
+                    viewModel.updateAndSave(
+                        onSaved = { NotificationScheduler.schedule(context.applicationContext, it) },
+                    ) { it.copy(odometerReminderTime = value) }
                     showTimePicker = false
                 },
                 onDismiss = { showTimePicker = false },
@@ -370,7 +373,7 @@ private fun ReceiptQualityCard(
             if (expanded) {
                 Text(
                     "Compressed keeps uploads small. Full quality uploads a full-resolution, " +
-                        "lossless image (much larger) — set it per section where receipt " +
+                        "lossless image (much larger) - set it per section where receipt " +
                         "detail matters.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

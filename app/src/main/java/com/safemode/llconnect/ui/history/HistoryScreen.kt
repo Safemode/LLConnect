@@ -34,6 +34,7 @@ import com.safemode.llconnect.ui.common.EmptyState
 import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.common.UnavailableAreasNotice
 import com.safemode.llconnect.ui.records.icon
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,18 +59,24 @@ fun HistoryScreen(
                 UiState.Loading -> LoadingState()
                 UiState.NotConfigured -> ErrorState(message = "Add your server details under Server first.")
                 is UiState.Error -> ErrorState(message = s.message, onRetry = viewModel::load)
-                is UiState.Success -> if (s.data.isEmpty()) {
-                    EmptyState(
-                        icon = Icons.Filled.History,
-                        title = "No activity yet",
-                        message = "Service, fuel, repairs and other records across all your vehicles appear here, newest first.",
-                    )
+                is UiState.Success -> if (s.data.items.isEmpty()) {
+                    Column {
+                        UnavailableAreasNotice(s.data.unavailable, Modifier.padding(16.dp))
+                        EmptyState(
+                            icon = Icons.Filled.History,
+                            title = "No activity yet",
+                            message = "Service, fuel, repairs and other records across all your vehicles appear here, newest first.",
+                        )
+                    }
                 } else {
                     LazyColumn(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(s.data) { item -> ActivityCard(item) }
+                        if (s.data.unavailable.isNotEmpty()) {
+                            item { UnavailableAreasNotice(s.data.unavailable) }
+                        }
+                        items(s.data.items) { item -> ActivityCard(item) }
                     }
                     }
                 }

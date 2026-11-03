@@ -10,12 +10,22 @@ data class ActivityItem(
     val cost: Double?,
 )
 
-/** Aggregated spend for the Reports screen. */
+/**
+ * The History feed. [unavailable] lists record types whose endpoint failed (for example one an
+ * older server doesn't have), so the screen can say what's missing instead of failing outright.
+ */
+data class ActivityFeed(
+    val items: List<ActivityItem>,
+    val unavailable: List<RecordArea> = emptyList(),
+)
+
+/** Aggregated spend for the Reports screen. [unavailable] is as in [ActivityFeed]. */
 data class CostReport(
     val totalCost: Double,
     val recordCount: Int,
     val byCategory: List<CategoryTotal>,
     val byVehicle: List<VehicleTotal>,
+    val unavailable: List<RecordArea> = emptyList(),
 )
 
 data class CategoryTotal(val area: RecordArea, val total: Double, val count: Int)

@@ -6,7 +6,7 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 /**
  * Converts a request model into `application/x-www-form-urlencoded` fields.
  *
- * LubeLogger's server (`QueryParamFilter`) crashes on JSON request bodies — it tries to
+ * LubeLogger's server (`QueryParamFilter`) crashes on JSON request bodies - it tries to
  * rewind the non-seekable request stream and throws, taking the container down. Its web UI
  * uses form-encoded posts, which ASP.NET buffers (seekable), so the filter is happy. We do
  * the same: send writes as form fields.

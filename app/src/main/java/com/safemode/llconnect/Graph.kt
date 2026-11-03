@@ -68,14 +68,14 @@ object Graph {
 
         // Reachability check: whenever a network is present but the server isn't confirmed
         // reachable (at launch, or after it went down), quietly probe it off the UI thread. This
-        // resolves the "checking" state into reachable/unreachable and reconnects on its own — the
+        // resolves the "checking" state into reachable/unreachable and reconnects on its own - the
         // UI never waits on it and keeps serving cached data meanwhile.
         //
         // The probe only exists to drive the offline banner, which nobody sees while the app is
         // backgrounded, so it's gated to the foreground via ProcessLifecycleOwner: repeatOnLifecycle
         // runs the loop while the process is STARTED and cancels it when the app leaves the
         // foreground. This stops the app from firing network requests every few seconds in the
-        // background — the worst case being a LAN server that's away/off while Wi-Fi stays up.
+        // background - the worst case being a LAN server that's away/off while Wi-Fi stays up.
         appScope.launch {
             ProcessLifecycleOwner.get().lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 runReachabilityLoop()
@@ -97,10 +97,11 @@ object Graph {
             }
         }
 
-        // Notifications: create channels and (re)schedule the daily worker from saved preferences.
+        // Notifications: create channels and make sure the daily worker is queued. KEEP, not
+        // REPLACE: this also runs when WorkManager starts the process for the daily check itself.
         Notifications.ensureChannels(app)
         appScope.launch {
-            NotificationScheduler.schedule(app, settingsRepository.config.first())
+            NotificationScheduler.ensureScheduled(app, settingsRepository.config.first())
         }
     }
 
@@ -108,7 +109,7 @@ object Graph {
      * While in the foreground: probe whenever online and not confirmed reachable, backing off
      * geometrically between failed probes (so a persistently-down server isn't hammered). Once
      * reachable, suspend until the status leaves REACHABLE (a network change flips it back to
-     * CHECKING) instead of waking on a fixed timer — so a steady connection costs nothing.
+     * CHECKING) instead of waking on a fixed timer - so a steady connection costs nothing.
      */
     private suspend fun runReachabilityLoop() = withContext(Dispatchers.IO) {
         var backoffMs = PROBE_MIN_BACKOFF_MS

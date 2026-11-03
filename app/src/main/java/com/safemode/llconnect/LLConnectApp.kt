@@ -18,7 +18,7 @@ class LLConnectApp : Application(), ImageLoaderFactory {
      * Coil uses this loader app-wide. Requests go through an OkHttp client carrying the
      * LubeLogger auth headers, and images are cached in memory and on disk so each one is
      * fetched from the server only once. `respectCacheHeaders(false)` means we reuse the
-     * cached copy even though the image route sends no cache-control headers — the image
+     * cached copy even though the image route sends no cache-control headers - the image
      * filename is a UUID that changes when the photo is replaced, so the URL stays a safe key.
      */
     override fun newImageLoader(): ImageLoader =

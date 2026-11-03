@@ -4,7 +4,7 @@ import com.safemode.llconnect.data.RecordArea
 
 /**
  * A new record the user saved while the server was unavailable, held on-device until it can be
- * submitted. Scoped to adds only — edits/deletes stay online-only.
+ * submitted. Scoped to adds only - edits/deletes stay online-only.
  *
  * @property id stable UUID, also the name of this entry's on-disk attachment directory.
  * @property serverId the base URL of the server this entry was saved against, so changing the
@@ -13,7 +13,7 @@ import com.safemode.llconnect.data.RecordArea
  * @property createdAt epoch millis the entry was queued (for ordering + "queued Xm ago").
  * @property vehicleName snapshot of the vehicle's display name, so the queue list reads well even
  *   when the server (and its vehicle list) is unreachable.
- * @property uploadedAttachments attachments already stored on the server — only possible when a
+ * @property uploadedAttachments attachments already stored on the server - only possible when a
  *   save started online, uploaded some receipts, then failed on the record write. Carried by
  *   reference and re-sent as-is at flush time.
  * @property pendingAttachments local images awaiting upload; uploaded during [flush] before the
@@ -36,7 +36,7 @@ data class QueuedEntry(
 /**
  * The add-relevant form values, mirroring the subset of the record form that applies to new
  * records. Nullable where the form leaves a field blank; strings are kept verbatim (notes/tags are
- * sent even when empty, matching what the live form does). `extraFields` is intentionally absent —
+ * sent even when empty, matching what the live form does). `extraFields` is intentionally absent -
  * new records never carry it.
  */
 data class QueuedFields(

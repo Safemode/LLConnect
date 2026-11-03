@@ -3,7 +3,7 @@ package com.safemode.llconnect.ui.history
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.safemode.llconnect.Graph
-import com.safemode.llconnect.data.ActivityItem
+import com.safemode.llconnect.data.ActivityFeed
 import com.safemode.llconnect.ui.common.DateRange
 import com.safemode.llconnect.ui.common.ReloadJob
 import com.safemode.llconnect.ui.common.UiState
@@ -17,8 +17,8 @@ class HistoryViewModel : ViewModel() {
     private val repository = Graph.repository
     private val settings = Graph.settingsRepository
 
-    private val _state = MutableStateFlow<UiState<List<ActivityItem>>>(UiState.Loading)
-    val state: StateFlow<UiState<List<ActivityItem>>> = _state.asStateFlow()
+    private val _state = MutableStateFlow<UiState<ActivityFeed>>(UiState.Loading)
+    val state: StateFlow<UiState<ActivityFeed>> = _state.asStateFlow()
 
     private val _range = MutableStateFlow(DateRange.ALL)
     val range: StateFlow<DateRange> = _range.asStateFlow()

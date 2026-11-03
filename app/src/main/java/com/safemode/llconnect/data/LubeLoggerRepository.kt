@@ -23,7 +23,6 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import com.safemode.llconnect.data.remote.models.GasRecord
 import com.safemode.llconnect.data.remote.models.GenericRecord
@@ -143,7 +142,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
      */
     private fun parseVersion(raw: String): String {
         val text = raw.trim()
-        if (text.isEmpty()) return "—"
+        if (text.isEmpty()) return "-"
         if (text.startsWith("{")) {
             runCatching { JSONObject(text) }.getOrNull()?.let { obj ->
                 // Prefer common keys, then fall back to any version-looking value.
@@ -200,11 +199,15 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     /** Configured odometer label suffix (e.g. "mi" or "km") for display-only unit labels. */
     private fun distanceSuffix(): String = apiProvider.currentConfig().distanceUnit.suffix
 
-    /** Recent activity across every vehicle, newest first, optionally within a date range. */
+    /**
+     * Recent activity across every vehicle, newest first, optionally within a date range. One
+     * record type failing doesn't fail the feed: it's listed in [ActivityFeed.unavailable]. Only
+     * when every type fails is the first error returned.
+     */
     suspend fun getActivity(
         startDate: String? = null,
         endDate: String? = null,
-    ): Result<List<ActivityItem>> = runCatchingCancellable {
+    ): Result<ActivityFeed> = runCatchingCancellable {
         coroutineScope {
             val api = api()
             val names = vehicleNames(api)
@@ -212,15 +215,23 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
             val (useMpg, useUkMpg) = mpgParams()
             val unit = distanceSuffix()
 
-            val service = async { api.getAllServiceRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.SERVICE, ::name) } }
-            val repair = async { api.getAllRepairRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.REPAIR, ::name) } }
-            val upgrade = async { api.getAllUpgradeRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.UPGRADE, ::name) } }
-            val tax = async { api.getAllTaxRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.TAX, ::name) } }
-            val gas = async { api.getAllGasRecords(startDate, endDate, useMpg, useUkMpg).unwrap().map { it.toActivity(::name) } }
-            val odo = async { api.getAllOdometerRecords(startDate, endDate).unwrap().map { it.toActivity(unit, ::name) } }
+            fun load(area: RecordArea, block: suspend () -> List<ActivityItem>) =
+                async { area to runCatchingCancellable { block() } }
+            val results = listOf(
+                load(RecordArea.SERVICE) { api.getAllServiceRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.SERVICE, ::name) } },
+                load(RecordArea.REPAIR) { api.getAllRepairRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.REPAIR, ::name) } },
+                load(RecordArea.UPGRADE) { api.getAllUpgradeRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.UPGRADE, ::name) } },
+                load(RecordArea.TAX) { api.getAllTaxRecords(startDate, endDate).unwrap().map { it.toActivity(RecordArea.TAX, ::name) } },
+                load(RecordArea.GAS) { api.getAllGasRecords(startDate, endDate, useMpg, useUkMpg).unwrap().map { it.toActivity(::name) } },
+                load(RecordArea.ODOMETER) { api.getAllOdometerRecords(startDate, endDate).unwrap().map { it.toActivity(unit, ::name) } },
+            ).map { it.await() }
 
-            (service.await() + repair.await() + upgrade.await() + tax.await() + gas.await() + odo.await())
-                .sortedByDescending { parseDate(it.date)?.toEpochDay() ?: Long.MIN_VALUE }
+            if (results.all { it.second.isFailure }) throw results.first().second.exceptionOrNull()!!
+            ActivityFeed(
+                items = results.flatMap { it.second.getOrNull().orEmpty() }
+                    .sortedByDescending { parseDate(it.date)?.toEpochDay() ?: Long.MIN_VALUE },
+                unavailable = results.filter { it.second.isFailure }.map { it.first },
+            )
         }
     }
 
@@ -228,7 +239,8 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
     suspend fun getCostReport(
         startDate: String? = null,
         endDate: String? = null,
-    ): Result<CostReport> = getActivity(startDate, endDate).map { items ->
+    ): Result<CostReport> = getActivity(startDate, endDate).map { feed ->
+        val items = feed.items
         val withCost = items.filter { (it.cost ?: 0.0) != 0.0 }
         val byCategory = withCost.groupBy { it.area }
             .map { (area, rows) -> CategoryTotal(area, rows.sumOf { it.cost ?: 0.0 }, rows.size) }
@@ -241,6 +253,7 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
             recordCount = items.size,
             byCategory = byCategory,
             byVehicle = byVehicle,
+            unavailable = feed.unavailable,
         )
     }
 
@@ -619,7 +632,8 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
                     sameLong(it.dueOdometer, fields.dueOdometer) && sameText(it.metric, fields.metric)
             }
             RecordArea.EQUIPMENT -> api.getEquipmentRecords(vehicleId).unwrap().any {
-                sameText(it.description, fields.description)
+                sameText(it.description, fields.description) && sameText(it.notes, fields.notes) &&
+                    (it.isEquipped ?: true) == fields.isEquipped
             }
             RecordArea.NOTE -> api.getNotes(vehicleId).unwrap().any {
                 sameText(it.description, fields.description) && sameText(it.noteText, fields.noteText)
@@ -701,46 +715,53 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         }.orEmpty()
     }
 
-    /** Replaces the record's attachment list (used for add/rename/delete), preserving all other fields. */
-    suspend fun setAttachments(
+    /**
+     * Changes the record's attachment list (used for add/rename/delete), preserving all other
+     * fields. [edit] is applied to the list as the server has it right now, not to what a screen
+     * loaded earlier: the update replaces the whole list, so editing a stale copy would drop
+     * attachments added from another device in the meantime.
+     */
+    suspend fun editAttachments(
         area: RecordArea,
         vehicleId: String,
         recordId: String,
-        files: List<FileAttachment>,
+        edit: (List<FileAttachment>) -> List<FileAttachment>,
     ): Result<Unit> = runCatchingCancellable {
         val api = api()
         fun match(id: Long?) = id?.toString() == recordId
         fun <T> T?.orThrow(): T = this ?: throw IllegalStateException("Record no longer exists.")
+        fun edited(current: List<FileAttachmentResponse>?) =
+            edit(current.orEmpty().map { FileAttachment(name = it.name, location = it.location) })
         val response: Response<*> = when (area) {
             RecordArea.SERVICE -> api.updateServiceRecord(
-                FormEncoder.fields(api.getServiceRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getServiceRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.REPAIR -> api.updateRepairRecord(
-                FormEncoder.fields(api.getRepairRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getRepairRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.UPGRADE -> api.updateUpgradeRecord(
-                FormEncoder.fields(api.getUpgradeRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getUpgradeRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.TAX -> api.updateTaxRecord(
-                FormEncoder.fields(api.getTaxRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toTaxUpdateRequest(files))
+                FormEncoder.fields(api.getTaxRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toTaxUpdateRequest(edited(it.files)) })
             )
             RecordArea.GAS -> api.updateGasRecord(
-                FormEncoder.fields(api.getGasRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getGasRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.ODOMETER -> api.updateOdometerRecord(
-                FormEncoder.fields(api.getOdometerRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getOdometerRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.PLAN -> api.updatePlanRecord(
-                FormEncoder.fields(api.getPlanRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getPlanRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.SUPPLY -> api.updateSupplyRecord(
-                FormEncoder.fields(api.getSupplyRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getSupplyRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.EQUIPMENT -> api.updateEquipmentRecord(
-                FormEncoder.fields(api.getEquipmentRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getEquipmentRecords(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.NOTE -> api.updateNote(
-                FormEncoder.fields(api.getNotes(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().toUpdateRequest(files))
+                FormEncoder.fields(api.getNotes(vehicleId).unwrap().firstOrNull { match(it.id) }.orThrow().let { it.toUpdateRequest(edited(it.files)) })
             )
             RecordArea.REMINDER -> throw IllegalArgumentException("Reminders don't support attachments.")
         }
@@ -748,19 +769,10 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         Unit
     }
 
-    /** Uploads a document and returns a [FileAttachment] pointing at the stored file. */
-    suspend fun uploadDocument(
-        fileName: String,
-        mimeType: String?,
-        bytes: ByteArray,
-    ): Result<FileAttachment> = runCatchingCancellable {
-        val media = (mimeType ?: "application/octet-stream").toMediaTypeOrNull()
-        finishUpload(MultipartBody.Part.createFormData("documents", fileName, bytes.toRequestBody(media)), fileName)
-    }
-
     /**
-     * Streams [file] to the server rather than reading it into memory first, so full-resolution
-     * (uncompressed) receipt scans don't risk an out-of-memory crash on large images.
+     * Uploads [file] and returns a [FileAttachment] pointing at the stored copy. The file is
+     * streamed rather than read into memory first, so large scans and documents don't risk an
+     * out-of-memory crash.
      */
     suspend fun uploadDocument(
         file: File,
@@ -787,14 +799,22 @@ class LubeLoggerRepository(private val apiProvider: ApiProvider) {
         return base + "/" + loc.trimStart('/')
     }
 
-    /** Downloads an attachment's bytes using the authenticated client (off the main thread). */
-    suspend fun downloadAttachment(location: String): Result<ByteArray> = runCatchingCancellable {
+    /**
+     * Downloads an attachment into [target] using the authenticated client (off the main thread).
+     * The body is streamed to disk, so a large file never has to fit in memory.
+     */
+    suspend fun downloadAttachment(location: String, target: File): Result<Unit> = runCatchingCancellable {
         val url = attachmentUrl(location) ?: throw IllegalStateException("Not connected.")
         val client = apiProvider.authenticatedImageClient()
         withContext(Dispatchers.IO) {
             client.newCall(Request.Builder().url(url).build()).execute().use {
                 if (!it.isSuccessful) throw IllegalStateException("Download failed (${it.code}).")
-                it.body?.bytes() ?: throw IllegalStateException("Empty download.")
+                try {
+                    target.outputStream().use { out -> it.body.byteStream().copyTo(out) }
+                } catch (e: Exception) {
+                    target.delete()
+                    throw e
+                }
             }
         }
     }

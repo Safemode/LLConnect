@@ -7,6 +7,7 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.Cache
 import okhttp3.CacheControl
 import okhttp3.Credentials
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -59,7 +60,8 @@ class ApiProvider(
      */
     private val probeClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor { config })
+            .addInterceptor(ApiHeadersInterceptor { config })
+            .addNetworkInterceptor(AuthInterceptor { config })
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(5, TimeUnit.SECONDS)
             .build()
@@ -84,7 +86,7 @@ class ApiProvider(
 
     /**
      * A direct, short-timeout network hit that bypasses the cache/offline interceptor, used by the
-     * background reachability check to detect when a down server comes back. Blocking — call off
+     * background reachability check to detect when a down server comes back. Blocking - call off
      * the main thread. Returns true if the server responds at all (any HTTP status).
      */
     fun probeReachable(): Boolean {
@@ -113,28 +115,18 @@ class ApiProvider(
 
     /**
      * An OkHttp client that injects only the auth headers (no JSON Accept / culture headers),
-     * so protected vehicle images can be fetched by Coil.
+     * so protected vehicle images and attachments can be fetched. Built once and shared, since
+     * every client carries its own connection pool and threads.
      */
-    fun authenticatedImageClient(): OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor(Interceptor { chain ->
-            val current = config
-            val builder = chain.request().newBuilder()
-            when (current.authMode) {
-                AuthMode.API_KEY -> if (current.apiKey.isNotBlank()) {
-                    builder.header("x-api-key", current.apiKey)
-                }
-                AuthMode.BASIC -> if (current.basicUsername.isNotBlank()) {
-                    builder.header(
-                        "Authorization",
-                        Credentials.basic(current.basicUsername, current.basicPassword),
-                    )
-                }
-            }
-            chain.proceed(builder.build())
-        })
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val imageClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .addNetworkInterceptor(AuthInterceptor { config })
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
+
+    fun authenticatedImageClient(): OkHttpClient = imageClient
 
     /** Current API, or null when the host isn't set yet. */
     fun apiOrNull(): LubeLoggerApi? {
@@ -158,9 +150,10 @@ class ApiProvider(
     private fun buildClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .cache(httpCache)
-            .addInterceptor(AuthInterceptor { config })
+            .addInterceptor(ApiHeadersInterceptor { config })
             // Reports reachability and falls back to cached data when the server is down.
             .addInterceptor(OfflineInterceptor(serverStatus, isOnline))
+            .addNetworkInterceptor(AuthInterceptor { config })
             .addNetworkInterceptor(CacheWriteInterceptor())
         if (debugLogging) {
             builder.addInterceptor(
@@ -185,11 +178,33 @@ class ApiProvider(
     }
 }
 
-/** Adds authentication and culture-invariant headers using the latest config. */
+/** Adds the culture-invariant and JSON Accept headers the API expects, using the latest config. */
+class ApiHeadersInterceptor(private val configProvider: () -> ConnectionConfig) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val builder = chain.request().newBuilder()
+        if (configProvider().cultureInvariant) {
+            builder.header("culture-invariant", "true")
+        }
+        builder.header("Accept", "application/json")
+        return chain.proceed(builder.build())
+    }
+}
+
+/**
+ * Adds the credentials from the latest config. Install it as a network interceptor so it runs for
+ * every redirect hop: credentials are only attached when the hop goes to the configured server's
+ * host, so a proxy that redirects to a login portal, or an absolute attachment URL on another host,
+ * never receives the API key or password.
+ */
 class AuthInterceptor(private val configProvider: () -> ConnectionConfig) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val config = configProvider()
-        val builder = chain.request().newBuilder()
+        val request = chain.request()
+        val serverHost = config.baseUrl().toHttpUrlOrNull()?.host
+        if (serverHost == null || !request.url.host.equals(serverHost, ignoreCase = true)) {
+            return chain.proceed(request)
+        }
+        val builder = request.newBuilder()
         when (config.authMode) {
             AuthMode.API_KEY -> if (config.apiKey.isNotBlank()) {
                 builder.header("x-api-key", config.apiKey)
@@ -201,10 +216,6 @@ class AuthInterceptor(private val configProvider: () -> ConnectionConfig) : Inte
                 )
             }
         }
-        if (config.cultureInvariant) {
-            builder.header("culture-invariant", "true")
-        }
-        builder.header("Accept", "application/json")
         return chain.proceed(builder.build())
     }
 }
@@ -212,7 +223,8 @@ class AuthInterceptor(private val configProvider: () -> ConnectionConfig) : Inte
 /**
  * Tries the network first; on a connection failure it reports the server as unreachable and
  * retries the request against the cache only (serving stale data when available). A successful
- * network call reports the server as reachable. Writes (non-GET) simply fail offline.
+ * network call reports the server as reachable. Writes (non-GET) simply fail offline, and so do
+ * GETs marked no-store (server actions such as making a backup), which are never served from cache.
  */
 class OfflineInterceptor(
     private val status: ServerStatus,
@@ -220,13 +232,13 @@ class OfflineInterceptor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val isGet = request.method == "GET"
+        val cacheable = request.method == "GET" && !request.cacheControl.noStore
         // Serve cache immediately (no connect attempt) when we already know we can't reach the
-        // server — either there's no network, or the last attempt/probe showed it's down. This
+        // server - either there's no network, or the last attempt/probe showed it's down. This
         // keeps navigation instant instead of hitting the connect timeout on every screen.
         // A background probe (see ApiProvider.probeReachable) restores connectivity when it's back.
         // Writes still attempt the network so they surface a real result and re-probe the server.
-        if (isGet && (!isOnline() || !status.isReachable())) {
+        if (cacheable && (!isOnline() || !status.isReachable())) {
             return chain.proceed(request.cacheOnly())
         }
         return try {
@@ -235,6 +247,7 @@ class OfflineInterceptor(
             response
         } catch (e: IOException) {
             status.report(false)
+            if (!cacheable && request.method == "GET") throw e
             // Returns the cached response, or a 504 (Unsatisfiable Request) if nothing is cached.
             chain.proceed(request.cacheOnly())
         }
@@ -252,7 +265,7 @@ class OfflineInterceptor(
 
 /**
  * Rewrites response cache headers so GET responses are stored on disk (LubeLogger sends none),
- * while `max-age=0` keeps them immediately stale — so online requests always re-fetch fresh data
+ * while `max-age=0` keeps them immediately stale - so online requests always re-fetch fresh data
  * and only the offline path (only-if-cached + max-stale) serves the stored copy.
  */
 class CacheWriteInterceptor : Interceptor {

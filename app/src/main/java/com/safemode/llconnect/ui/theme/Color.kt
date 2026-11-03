@@ -2,7 +2,7 @@ package com.safemode.llconnect.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Brand palette — a deep automotive blue/teal with amber accents.
+// Brand palette - a deep automotive blue/teal with amber accents.
 val md_primary_light = Color(0xFF00629D)
 val md_onPrimary_light = Color(0xFFFFFFFF)
 val md_primaryContainer_light = Color(0xFFCFE5FF)

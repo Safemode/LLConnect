@@ -25,6 +25,31 @@ class ConnectionConfigTest {
         assertEquals("http://10.0.0.5:8080/", config.baseUrl())
     }
 
+    @Test fun baseUrlKeepsPortTypedIntoHost() {
+        val config = ConnectionConfig(scheme = "http", host = "10.0.0.5:9000", port = "")
+        assertEquals("http://10.0.0.5:9000/", config.baseUrl())
+    }
+
+    @Test fun baseUrlPutsSubPathAfterPort() {
+        val config = ConnectionConfig(scheme = "https", host = "lube.example.com/lubelogger/", port = "8443")
+        assertEquals("https://lube.example.com:8443/lubelogger/", config.baseUrl())
+    }
+
+    @Test fun baseUrlKeepsSubPathWithoutPort() {
+        val config = ConnectionConfig(scheme = "https", host = "https://lube.example.com/lubelogger", port = "")
+        assertEquals("https://lube.example.com/lubelogger/", config.baseUrl())
+    }
+
+    @Test fun baseUrlBracketsBareIpv6() {
+        val config = ConnectionConfig(scheme = "http", host = "fd00::5", port = "8080")
+        assertEquals("http://[fd00::5]:8080/", config.baseUrl())
+    }
+
+    @Test fun baseUrlReplacesPortOnBracketedIpv6() {
+        val config = ConnectionConfig(scheme = "http", host = "[fd00::5]:9000", port = "8080")
+        assertEquals("http://[fd00::5]:8080/", config.baseUrl())
+    }
+
     @Test fun receiptQualityDefaultsToCompressed() {
         val config = ConnectionConfig()
         assertEquals(ReceiptQuality.COMPRESSED, config.receiptQuality(RecordArea.GAS))

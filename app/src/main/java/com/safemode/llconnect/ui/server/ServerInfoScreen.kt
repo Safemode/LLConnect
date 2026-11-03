@@ -259,9 +259,9 @@ fun ServerInfoScreen(
                                 Text("Signed in", style = MaterialTheme.typography.titleMedium)
                                 InfoRow(
                                     label = if (s.data.usingApiKey) "API Key Name" else "User",
-                                    value = s.data.user?.userName ?: "—",
+                                    value = s.data.user?.userName ?: "-",
                                 )
-                                InfoRow("Email", s.data.user?.emailAddress ?: "—")
+                                InfoRow("Email", s.data.user?.emailAddress ?: "-")
                                 InfoRow("Admin", if (s.data.user?.isAdmin == true) "Yes" else "No")
                                 InfoRow("Root", if (s.data.user?.isRootUser == true) "Yes" else "No")
                             }
@@ -269,7 +269,7 @@ fun ServerInfoScreen(
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text("Instance", style = MaterialTheme.typography.titleMedium)
-                                InfoRow("Version", s.data.version ?: "—")
+                                InfoRow("Version", s.data.version ?: "-")
                             }
                         }
                     }

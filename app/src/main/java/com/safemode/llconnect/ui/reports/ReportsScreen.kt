@@ -35,6 +35,7 @@ import com.safemode.llconnect.ui.common.DateRangeChips
 import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
 import com.safemode.llconnect.ui.common.UiState
+import com.safemode.llconnect.ui.common.UnavailableAreasNotice
 
 private fun money(value: Double): String = "$" + "%,.2f".format(value)
 
@@ -76,6 +77,7 @@ private fun ReportContent(report: CostReport) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        UnavailableAreasNotice(report.unavailable)
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = androidx.compose.material3.CardDefaults.cardColors(
