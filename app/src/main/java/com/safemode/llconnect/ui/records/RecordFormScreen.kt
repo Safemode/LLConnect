@@ -40,10 +40,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -55,16 +57,6 @@ import com.safemode.llconnect.data.queue.QueuedAttachment
 import com.safemode.llconnect.data.queue.QueuedFields
 import com.safemode.llconnect.data.remote.models.ExtraField
 import com.safemode.llconnect.data.remote.models.FileAttachment
-import com.safemode.llconnect.data.remote.models.EquipmentRecordRequest
-import com.safemode.llconnect.data.remote.models.GasRecordRequest
-import com.safemode.llconnect.data.remote.models.GenericRecordRequest
-import com.safemode.llconnect.data.remote.models.NoteRequest
-import com.safemode.llconnect.data.remote.models.OdometerRecordRequest
-import com.safemode.llconnect.data.remote.models.PlanRecordRequest
-import com.safemode.llconnect.data.remote.models.ReminderRecordRequest
-import com.safemode.llconnect.data.remote.models.SupplyRecordRequest
-import com.safemode.llconnect.data.remote.models.TaxRecordRequest
-import com.safemode.llconnect.data.AttachmentMerge
 import com.safemode.llconnect.data.NumberParsing
 import com.safemode.llconnect.ui.common.DateField
 import com.safemode.llconnect.ui.common.DropdownField
@@ -74,42 +66,12 @@ import com.safemode.llconnect.ui.common.QueuedAttachmentListSaver
 import com.safemode.llconnect.ui.scan.ScanReceiptScreen
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.IOException
 import java.time.LocalDate
 
 private val PlanTypes = listOf("ServiceRecord", "RepairRecord", "UpgradeRecord")
 private val PlanPriorities = listOf("Low", "Normal", "Critical")
 private val PlanProgress = listOf("Backlog", "InProgress", "Testing")
 private val ReminderMetrics = listOf("Both", "Odometer", "Date")
-
-/** All editable form fields, bundled so [submit] stays readable. */
-private data class FormValues(
-    val date: String,
-    val odometer: Long?,
-    val initialOdometer: Long?,
-    val description: String?,
-    val cost: Double?,
-    val fuelConsumed: Double?,
-    val isFillToFull: Boolean,
-    val missedFuelUp: Boolean,
-    val notes: String?,
-    val tags: String?,
-    val planType: String,
-    val priority: String,
-    val progress: String,
-    val partNumber: String?,
-    val partSupplier: String?,
-    val partQuantity: Long?,
-    val dueDate: String,
-    val dueOdometer: Long?,
-    val metric: String,
-    val isEquipped: Boolean,
-    val noteText: String?,
-    val pinned: Boolean,
-    val files: List<FileAttachment>,
-    val extraFields: List<ExtraField>?,
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,9 +94,14 @@ fun RecordFormScreen(
         .collectAsStateWithLifecycle(initialValue = Graph.apiProvider.currentConfig().distanceUnit.suffix)
 
     // Form state is saveable so rotation, a theme change, or the process being killed in the
-    // background doesn't wipe what's been typed or scanned. The in-flight flags (submitting,
-    // deleting, scanUploading) stay plain remember: the coroutines they track don't survive
-    // recreation, so they must start over.
+    // background doesn't wipe what's been typed or scanned. Saving, deleting and scan uploads run
+    // in [RecordFormViewModel], so they carry on through a recreation instead of being cancelled.
+    val formViewModel: RecordFormViewModel = viewModel(key = "record-form-$vehicleId-$areaName-$recordId")
+    val work by formViewModel.work.collectAsStateWithLifecycle()
+    val submitting = work == RecordFormViewModel.Work.SAVING
+    val deleting = work == RecordFormViewModel.Work.DELETING
+    val scanUploading = work == RecordFormViewModel.Work.UPLOADING_SCAN
+    val busy = work != null
     var date by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     var odometer by rememberSaveable { mutableStateOf("") }
     // Odometer records: the reading the entry counts up from. Prefilled (carried from the
@@ -190,11 +157,8 @@ fun RecordFormScreen(
     // user's changes.
     var editLoaded by rememberSaveable { mutableStateOf(false) }
     var loading by rememberSaveable { mutableStateOf(isEdit) }
-    var submitting by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf(false) }
-    var scanUploading by remember { mutableStateOf(false) }
     var scanning by rememberSaveable { mutableStateOf(false) }
 
     // In edit mode, fetch the existing record and pre-fill the fields.
@@ -242,6 +206,26 @@ fun RecordFormScreen(
         )
     }
 
+    // Results of the ViewModel's work, applied to whichever composition is current.
+    val currentOnBack by rememberUpdatedState(onBack)
+    LaunchedEffect(formViewModel) {
+        formViewModel.outcomes.collect { outcome ->
+            when (outcome) {
+                is RecordFormViewModel.Outcome.Closed -> {
+                    if (outcome.queued) Toast.makeText(context, QUEUED_MESSAGE, Toast.LENGTH_LONG).show()
+                    currentOnBack()
+                }
+                is RecordFormViewModel.Outcome.Failed -> error = outcome.message
+                is RecordFormViewModel.Outcome.ScanUploaded -> attachments = attachments + outcome.attachment
+                is RecordFormViewModel.Outcome.ScanStaged -> pendingImages = pendingImages + outcome.attachment
+                is RecordFormViewModel.Outcome.StagedUploaded -> {
+                    attachments = attachments + outcome.attachment
+                    pendingImages = pendingImages - outcome.staged
+                }
+            }
+        }
+    }
+
     // Vehicle name for queued-entry display. Reads from cache when the server is unreachable.
     LaunchedEffect(vehicleId) {
         Graph.repository.getVehicleById(vehicleId).onSuccess { v ->
@@ -283,42 +267,14 @@ fun RecordFormScreen(
             onBack = { scanning = false },
             onResult = { path ->
                 scanning = false
-                scanUploading = true
                 error = null
-                scope.launch {
-                    val file = File(path)
-                    if (!file.exists()) {
-                        error = "Couldn't read the scanned image."
-                    } else {
-                        // The scanner names the cache file with the encoded format's extension
-                        // (jpg when compressed, png when full quality); mirror it in the upload.
-                        // The file is streamed or moved, never read into memory, so a full-quality
-                        // scan can't exhaust memory here.
-                        val ext = path.substringAfterLast('.', "jpg").lowercase()
-                        val mime = if (ext == "png") "image/png" else "image/jpeg"
-                        val taken = (attachments.mapNotNull { it.name } + pendingImages.map { it.fileName })
-                            .map { it.lowercase() }.toSet()
-                        val name = receiptFileName(date, area, odometer, taken, ext)
-                        if (Graph.serverStatus.isReachable()) {
-                            Graph.repository.uploadDocument(file, name, mime).fold(
-                                onSuccess = {
-                                    attachments = attachments + it
-                                    runCatching { file.delete() }
-                                },
-                                onFailure = {
-                                    // Likely just lost the server - stage it locally so it uploads
-                                    // with the record once it flushes from the queue.
-                                    pendingImages = pendingImages +
-                                        Graph.offlineQueue.stageImageFile(file, name, mime)
-                                },
-                            )
-                        } else {
-                            pendingImages = pendingImages +
-                                Graph.offlineQueue.stageImageFile(file, name, mime)
-                        }
-                    }
-                    scanUploading = false
-                }
+                // The scanner names the cache file with the encoded format's extension (jpg when
+                // compressed, png when full quality); mirror it in the upload.
+                val ext = path.substringAfterLast('.', "jpg").lowercase()
+                val mime = if (ext == "png") "image/png" else "image/jpeg"
+                val taken = (attachments.mapNotNull { it.name } + pendingImages.map { it.fileName })
+                    .map { it.lowercase() }.toSet()
+                formViewModel.uploadScan(path, receiptFileName(date, area, odometer, taken, ext), mime)
             },
         )
         return
@@ -341,7 +297,7 @@ fun RecordFormScreen(
                         }
                     }
                     if (isEdit) {
-                        IconButton(enabled = !deleting, onClick = { confirmDelete = true }) {
+                        IconButton(enabled = !busy, onClick = { confirmDelete = true }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "Delete",
@@ -531,6 +487,7 @@ fun RecordFormScreen(
                     pending = pendingImages,
                     uploading = scanUploading,
                     onScan = { scanning = true },
+                    scanEnabled = !busy,
                     onRemove = { file -> attachments = attachments - file },
                     onRemovePending = { p ->
                         pendingImages = pendingImages - p
@@ -546,154 +503,78 @@ fun RecordFormScreen(
             Button(
                 onClick = {
                     error = null
-                    submitting = true
-                    scope.launch {
-                        if (isEdit) {
-                            // Edits are online-only, so any receipt that was staged because its
-                            // upload failed must go up now, before the record is saved.
-                            for (pending in pendingImages) {
-                                val file = Graph.offlineQueue.stagedFile(pending)
-                                val uploaded = if (file != null && file.exists()) {
-                                    Graph.repository.uploadDocument(file, pending.fileName, pending.mimeType)
-                                } else {
-                                    Result.failure(IllegalStateException("The scanned image is missing."))
-                                }
-                                uploaded.fold(
-                                    onSuccess = {
-                                        attachments = attachments + it
-                                        pendingImages = pendingImages - pending
-                                        Graph.offlineQueue.discardStaged(pending)
-                                    },
-                                    onFailure = {
-                                        error = "Couldn't upload the scanned receipt: ${it.message}"
-                                        submitting = false
-                                        return@launch
-                                    },
-                                )
-                            }
-
-                            // Re-fetch the record right before saving. The update replaces the whole
-                            // record, so the form's loaded snapshot would wipe anything changed
-                            // elsewhere in the meantime. Attachments are merged: the server's
-                            // current list, plus scans added here, minus files removed here.
-                            val latest = Graph.repository
-                                .getRecordForEdit(area, vehicleId, recordId).getOrNull()
-                            val latestFiles = latest?.files
-                                ?.let { AttachmentMerge.merge(loadedAttachments, attachments, it) }
-                                ?: attachments
-                            val latestExtra = latest?.extraFields ?: extraFields
-                            val result = submit(
-                                area = area,
-                                vehicleId = vehicleId,
-                                id = recordId.toLongOrNull(),
-                                values = FormValues(
-                                    date = date,
-                                    odometer = odometer.toLongOrNull(),
-                                    initialOdometer = initialOdometer.toLongOrNull(),
-                                    description = description.ifBlank { null },
-                                    cost = NumberParsing.parseDecimal(cost),
-                                    fuelConsumed = NumberParsing.parseDecimal(fuelConsumed),
-                                    isFillToFull = isFillToFull,
-                                    missedFuelUp = missedFuelUp,
-                                    // Send empty strings rather than null so notes/tags are always
-                                    // present in the form body, matching LubeLogger's web UI.
-                                    notes = notes,
-                                    tags = tags,
-                                    planType = planType,
-                                    priority = priority,
-                                    progress = progress,
-                                    partNumber = partNumber.ifBlank { null },
-                                    partSupplier = partSupplier.ifBlank { null },
-                                    partQuantity = partQuantity.toLongOrNull(),
-                                    dueDate = dueDate,
-                                    dueOdometer = dueOdometer.toLongOrNull(),
-                                    metric = metric,
-                                    isEquipped = isEquipped,
-                                    noteText = noteText.ifBlank { null },
-                                    pinned = pinned,
-                                    files = latestFiles,
-                                    extraFields = latestExtra,
-                                ),
-                            )
-                            submitting = false
-                            result.fold(
-                                onSuccess = { onBack() },
-                                onFailure = { error = it.message },
-                            )
-                            return@launch
-                        }
-
-                        // ---- New record: submit live, or queue it when the server is away ----
-                        val fields = QueuedFields(
-                            date = date,
-                            odometer = odometer.toLongOrNull(),
-                            initialOdometer = initialOdometer.toLongOrNull(),
-                            description = description.ifBlank { null },
-                            cost = NumberParsing.parseDecimal(cost),
-                            fuelConsumed = NumberParsing.parseDecimal(fuelConsumed),
-                            isFillToFull = isFillToFull,
-                            missedFuelUp = missedFuelUp,
-                            notes = notes,
-                            tags = tags,
-                            planType = planType,
-                            priority = priority,
-                            progress = progress,
-                            partNumber = partNumber.ifBlank { null },
-                            partSupplier = partSupplier.ifBlank { null },
-                            partQuantity = partQuantity.toLongOrNull(),
-                            dueDate = dueDate,
-                            dueOdometer = dueOdometer.toLongOrNull(),
-                            metric = metric,
-                            isEquipped = isEquipped,
-                            noteText = noteText.ifBlank { null },
-                            pinned = pinned,
+                    if (isEdit) {
+                        formViewModel.saveEdit(
+                            area = area,
+                            vehicleId = vehicleId,
+                            recordId = recordId,
+                            values = FormValues(
+                                date = date,
+                                odometer = odometer.toLongOrNull(),
+                                initialOdometer = initialOdometer.toLongOrNull(),
+                                description = description.ifBlank { null },
+                                cost = NumberParsing.parseDecimal(cost),
+                                fuelConsumed = NumberParsing.parseDecimal(fuelConsumed),
+                                isFillToFull = isFillToFull,
+                                missedFuelUp = missedFuelUp,
+                                // Send empty strings rather than null so notes/tags are always
+                                // present in the form body, matching LubeLogger's web UI.
+                                notes = notes,
+                                tags = tags,
+                                planType = planType,
+                                priority = priority,
+                                progress = progress,
+                                partNumber = partNumber.ifBlank { null },
+                                partSupplier = partSupplier.ifBlank { null },
+                                partQuantity = partQuantity.toLongOrNull(),
+                                dueDate = dueDate,
+                                dueOdometer = dueOdometer.toLongOrNull(),
+                                metric = metric,
+                                isEquipped = isEquipped,
+                                noteText = noteText.ifBlank { null },
+                                pinned = pinned,
+                                files = attachments,
+                                extraFields = extraFields,
+                            ),
+                            loadedAttachments = loadedAttachments,
+                            pending = pendingImages,
                         )
-
-                        // Queues the entry and leaves the form; on a failed write, stays put with the
-                        // input intact instead.
-                        suspend fun queueAndLeave() {
-                            val uploaded = attachments.map {
-                                QueuedAttachment(it.name ?: "attachment", "image/jpeg", location = it.location)
-                            }
-                            try {
-                                Graph.offlineQueue.enqueue(
-                                    area = area,
-                                    vehicleId = vehicleId,
-                                    vehicleName = vehicleName.ifBlank { "Vehicle #$vehicleId" },
-                                    fields = fields,
-                                    uploaded = uploaded,
-                                    staged = pendingImages,
-                                )
-                            } catch (e: IOException) {
-                                error = "Couldn't save this entry on the device: ${e.message}"
-                                submitting = false
-                                return
-                            }
-                            Toast.makeText(context, QUEUED_MESSAGE, Toast.LENGTH_LONG).show()
-                            onBack()
-                        }
-
-                        // Pure-live path only when the server is reachable and every receipt is
-                        // already uploaded; otherwise queue (enqueue flushes immediately when
-                        // reachable, so an online save with pending receipts still goes up now).
-                        if (Graph.serverStatus.isReachable() && pendingImages.isEmpty()) {
-                            Graph.repository.add(area, vehicleId, fields, attachments).fold(
-                                onSuccess = { onBack() },
-                                onFailure = { e ->
-                                    if (!Graph.serverStatus.isReachable()) {
-                                        queueAndLeave()
-                                    } else {
-                                        error = e.message
-                                        submitting = false
-                                    }
-                                },
-                            )
-                        } else {
-                            queueAndLeave()
-                        }
+                    } else {
+                        formViewModel.saveNew(
+                            area = area,
+                            vehicleId = vehicleId,
+                            vehicleName = vehicleName.ifBlank { "Vehicle #$vehicleId" },
+                            fields = QueuedFields(
+                                date = date,
+                                odometer = odometer.toLongOrNull(),
+                                initialOdometer = initialOdometer.toLongOrNull(),
+                                description = description.ifBlank { null },
+                                cost = NumberParsing.parseDecimal(cost),
+                                fuelConsumed = NumberParsing.parseDecimal(fuelConsumed),
+                                isFillToFull = isFillToFull,
+                                missedFuelUp = missedFuelUp,
+                                notes = notes,
+                                tags = tags,
+                                planType = planType,
+                                priority = priority,
+                                progress = progress,
+                                partNumber = partNumber.ifBlank { null },
+                                partSupplier = partSupplier.ifBlank { null },
+                                partQuantity = partQuantity.toLongOrNull(),
+                                dueDate = dueDate,
+                                dueOdometer = dueOdometer.toLongOrNull(),
+                                metric = metric,
+                                isEquipped = isEquipped,
+                                noteText = noteText.ifBlank { null },
+                                pinned = pinned,
+                            ),
+                            attachments = attachments,
+                            pending = pendingImages,
+                        )
                     }
                 },
-                enabled = !submitting,
+                // Not while a scan is still uploading either, so the save can't miss it.
+                enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (submitting) {
@@ -719,16 +600,8 @@ fun RecordFormScreen(
                     enabled = !deleting,
                     onClick = {
                         confirmDelete = false
-                        deleting = true
-                        scope.launch {
-                            Graph.repository.deleteRecord(area, recordId).fold(
-                                onSuccess = { onBack() },
-                                onFailure = {
-                                    error = it.message ?: "Delete failed."
-                                    deleting = false
-                                },
-                            )
-                        }
+                        error = null
+                        formViewModel.delete(area, recordId)
                     },
                 ) { Text("Delete") }
             },
@@ -760,6 +633,7 @@ private fun ReceiptSection(
     attachments: List<FileAttachment>,
     pending: List<QueuedAttachment>,
     uploading: Boolean,
+    scanEnabled: Boolean,
     onScan: () -> Unit,
     onRemove: (FileAttachment) -> Unit,
     onRemovePending: (QueuedAttachment) -> Unit,
@@ -767,7 +641,7 @@ private fun ReceiptSection(
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         OutlinedButton(
             onClick = onScan,
-            enabled = !uploading,
+            enabled = scanEnabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (uploading) {
@@ -858,140 +732,3 @@ private fun receiptFileName(
 /** Shown after a new record is saved to the offline queue. */
 private const val QUEUED_MESSAGE =
     "Saved to queue - it'll upload when the server is reachable"
-
-private suspend fun submit(
-    area: RecordArea,
-    vehicleId: String,
-    id: Long?,
-    values: FormValues,
-): Result<Unit> {
-    val repo = Graph.repository
-    val isEdit = id != null
-    return when (area) {
-        RecordArea.SERVICE, RecordArea.REPAIR, RecordArea.UPGRADE -> {
-            val body = GenericRecordRequest(
-                id = id,
-                date = values.date,
-                odometer = values.odometer,
-                description = values.description,
-                cost = values.cost,
-                notes = values.notes,
-                tags = values.tags,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updateServiceLike(area, body) else repo.addServiceLike(area, vehicleId, body)
-        }
-        RecordArea.TAX -> {
-            val body = TaxRecordRequest(
-                id = id,
-                date = values.date,
-                description = values.description,
-                cost = values.cost,
-                notes = values.notes,
-                tags = values.tags,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updateTax(body) else repo.addTax(vehicleId, body)
-        }
-        RecordArea.GAS -> {
-            val body = GasRecordRequest(
-                id = id,
-                date = values.date,
-                odometer = values.odometer,
-                fuelConsumed = values.fuelConsumed,
-                cost = values.cost,
-                isFillToFull = values.isFillToFull,
-                missedFuelUp = values.missedFuelUp,
-                notes = values.notes,
-                tags = values.tags,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updateGas(body) else repo.addGas(vehicleId, body)
-        }
-        RecordArea.ODOMETER -> {
-            val body = OdometerRecordRequest(
-                id = id,
-                date = values.date,
-                // The update endpoint rejects an empty initial odometer; echo the loaded
-                // value back (defaulting to 0 if absent). On add, leave it null so the
-                // server derives it as before.
-                initialOdometer = if (isEdit) (values.initialOdometer ?: 0L) else values.initialOdometer,
-                odometer = values.odometer,
-                notes = values.notes,
-                tags = values.tags,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updateOdometer(body) else repo.addOdometer(vehicleId, body)
-        }
-        RecordArea.PLAN -> {
-            val body = PlanRecordRequest(
-                id = id,
-                description = values.description,
-                cost = values.cost,
-                type = values.planType,
-                priority = values.priority,
-                progress = values.progress,
-                notes = values.notes,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updatePlan(body) else repo.addPlan(vehicleId, body)
-        }
-        RecordArea.SUPPLY -> {
-            val body = SupplyRecordRequest(
-                id = id,
-                date = values.date,
-                partNumber = values.partNumber,
-                partSupplier = values.partSupplier,
-                partQuantity = values.partQuantity,
-                description = values.description,
-                cost = values.cost,
-                notes = values.notes,
-                tags = values.tags,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updateSupply(body) else repo.addSupply(vehicleId, body)
-        }
-        RecordArea.REMINDER -> {
-            val body = ReminderRecordRequest(
-                id = id,
-                description = values.description,
-                dueDate = if (values.metric != "Odometer") values.dueDate else null,
-                dueOdometer = if (values.metric != "Date") values.dueOdometer else null,
-                metric = values.metric,
-                notes = values.notes,
-                tags = values.tags,
-            )
-            if (isEdit) repo.updateReminder(body) else repo.addReminder(vehicleId, body)
-        }
-        RecordArea.EQUIPMENT -> {
-            val body = EquipmentRecordRequest(
-                id = id,
-                description = values.description,
-                isEquipped = values.isEquipped,
-                notes = values.notes,
-                tags = values.tags,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updateEquipment(body) else repo.addEquipment(vehicleId, body)
-        }
-        RecordArea.NOTE -> {
-            val body = NoteRequest(
-                id = id,
-                description = values.description,
-                noteText = values.noteText,
-                pinned = values.pinned,
-                tags = values.tags,
-                files = values.files.ifEmpty { null },
-                extraFields = values.extraFields,
-            )
-            if (isEdit) repo.updateNote(body) else repo.addNote(vehicleId, body)
-        }
-    }
-}
