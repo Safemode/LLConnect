@@ -20,13 +20,11 @@ class ReportsViewModel : ViewModel() {
     private val _state = MutableStateFlow<UiState<CostReport>>(UiState.Loading)
     val state: StateFlow<UiState<CostReport>> = _state.asStateFlow()
 
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
-
     private val _range = MutableStateFlow(DateRange.ALL)
     val range: StateFlow<DateRange> = _range.asStateFlow()
 
     private val reloads = ReloadJob()
+    val refreshing: StateFlow<Boolean> = reloads.refreshing
 
     init {
         load()
@@ -44,13 +42,9 @@ class ReportsViewModel : ViewModel() {
     }
 
     fun refresh() {
-        reloads.launch(viewModelScope) {
-            _refreshing.value = true
-            try {
-                reload(showLoading = false)
-            } finally {
-                _refreshing.value = false
-            }
+        reloads.launch(viewModelScope, refresh = true) {
+            Graph.probeIfUnreachable()
+            reload(showLoading = false)
         }
     }
 

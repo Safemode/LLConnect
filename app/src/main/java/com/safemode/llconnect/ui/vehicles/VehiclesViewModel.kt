@@ -28,10 +28,8 @@ class VehiclesViewModel : ViewModel() {
     private val _baseUrl = MutableStateFlow<String?>(null)
     val baseUrl: StateFlow<String?> = _baseUrl.asStateFlow()
 
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
-
     private val reloads = ReloadJob()
+    val refreshing: StateFlow<Boolean> = reloads.refreshing
 
     /** Id of the single favorite vehicle, or blank if none. */
     val favoriteVehicleId: StateFlow<String> = settings.config
@@ -52,7 +50,7 @@ class VehiclesViewModel : ViewModel() {
             settings.config
                 .map { ConnectionKey.from(it) to it }
                 .distinctUntilChanged { old, new -> old.first == new.first }
-                .collect { (_, config) -> reload(config) }
+                .collect { (_, config) -> reloads.launch(viewModelScope) { reload(config) } }
         }
         refreshWhenServerReachable { reloadSilently() }
     }
@@ -69,13 +67,9 @@ class VehiclesViewModel : ViewModel() {
 
     /** Pull-to-refresh: reload from the server, showing the refresh indicator. */
     fun refresh() {
-        reloads.launch(viewModelScope) {
-            _refreshing.value = true
-            try {
-                reload(settings.config.first(), showLoading = false)
-            } finally {
-                _refreshing.value = false
-            }
+        reloads.launch(viewModelScope, refresh = true) {
+            Graph.probeIfUnreachable()
+            reload(settings.config.first(), showLoading = false)
         }
     }
 

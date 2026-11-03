@@ -6,6 +6,7 @@ import com.safemode.llconnect.Graph
 import com.safemode.llconnect.data.remote.models.WhoAmI
 import com.safemode.llconnect.data.settings.AuthMode
 import com.safemode.llconnect.data.settings.ConnectionConfig
+import com.safemode.llconnect.ui.common.ReloadJob
 import com.safemode.llconnect.ui.common.UiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,14 +34,14 @@ class ServerViewModel : ViewModel() {
     private val _state = MutableStateFlow<UiState<ServerInfo>>(UiState.Loading)
     val state: StateFlow<UiState<ServerInfo>> = _state.asStateFlow()
 
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+    private val reloads = ReloadJob()
+    val refreshing: StateFlow<Boolean> = reloads.refreshing
 
     init {
         viewModelScope.launch {
             val config = settings.config.first()
             _form.value = config
-            reload(config, showLoading = true)
+            reloads.launch(viewModelScope) { reload(config, showLoading = true) }
         }
     }
 
@@ -51,15 +52,13 @@ class ServerViewModel : ViewModel() {
 
     /** Manual retry using the latest saved config. */
     fun load() {
-        viewModelScope.launch { reload(settings.config.first(), showLoading = true) }
+        reloads.launch(viewModelScope) { reload(settings.config.first(), showLoading = true) }
     }
 
     /** Pull-to-refresh: re-query the currently saved connection. */
     fun refresh() {
-        viewModelScope.launch {
-            _refreshing.value = true
+        reloads.launch(viewModelScope, refresh = true) {
             reload(settings.config.first(), showLoading = false)
-            _refreshing.value = false
         }
     }
 
@@ -83,7 +82,7 @@ class ServerViewModel : ViewModel() {
             settings.save(merged)
             Graph.apiProvider.updateConfig(merged)
             _form.value = merged
-            reload(merged, showLoading = true)
+            reloads.launch(viewModelScope) { reload(merged, showLoading = true) }
         }
     }
 

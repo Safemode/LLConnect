@@ -19,10 +19,8 @@ class RemindersViewModel : ViewModel() {
     private val _state = MutableStateFlow<UiState<List<ReminderItem>>>(UiState.Loading)
     val state: StateFlow<UiState<List<ReminderItem>>> = _state.asStateFlow()
 
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
-
     private val reloads = ReloadJob()
+    val refreshing: StateFlow<Boolean> = reloads.refreshing
 
     init {
         load()
@@ -34,13 +32,9 @@ class RemindersViewModel : ViewModel() {
     }
 
     fun refresh() {
-        reloads.launch(viewModelScope) {
-            _refreshing.value = true
-            try {
-                reload(showLoading = false)
-            } finally {
-                _refreshing.value = false
-            }
+        reloads.launch(viewModelScope, refresh = true) {
+            Graph.probeIfUnreachable()
+            reload(showLoading = false)
         }
     }
 
