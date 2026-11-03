@@ -164,7 +164,10 @@ fun ScanReceiptScreen(
             .setResolutionSelector(resolutionSelector)
             .build()
     }
+    val preview = remember { Preview.Builder().setResolutionSelector(resolutionSelector).build() }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+    // The provider the use cases were bound with, so leaving the scanner can release the camera.
+    val boundProvider = remember { arrayOfNulls<ProcessCameraProvider>(1) }
 
     // Latest detected document corners (ordered, in upright analysis-frame coordinates) and the
     // upright frame size they were measured against, for mapping onto the preview and the still.
@@ -195,7 +198,13 @@ fun ScanReceiptScreen(
     val lastHit = remember { longArrayOf(0L) }
 
     DisposableEffect(Unit) {
-        onDispose { analysisExecutor.shutdown() }
+        onDispose {
+            // The camera is bound to the hosting screen's lifecycle, which outlives the scanner (the
+            // record form stays open underneath), so unbind here or the camera keeps running.
+            imageAnalysis.clearAnalyzer()
+            boundProvider[0]?.unbind(preview, imageAnalysis, imageCapture)
+            analysisExecutor.shutdown()
+        }
     }
 
     LaunchedEffect(hasPermission) {
@@ -206,8 +215,12 @@ fun ScanReceiptScreen(
                     quad = null
                     return@setAnalyzer
                 }
-                val upright = rotate(proxy.toBitmap(), proxy.imageInfo.rotationDegrees)
+                val frame = proxy.toBitmap()
+                val upright = rotate(frame, proxy.imageInfo.rotationDegrees)
                 val detected = DocumentDetector.detectQuad(upright)
+                // Two full frames per analysis; free them now rather than leaving it to the GC.
+                if (upright !== frame) upright.recycle()
+                frame.recycle()
                 val now = System.currentTimeMillis()
                 if (detected != null) {
                     frameW = upright.width
@@ -236,8 +249,8 @@ fun ScanReceiptScreen(
             }
         }
         val provider = context.awaitCameraProvider()
-        val preview = Preview.Builder().setResolutionSelector(resolutionSelector).build()
-            .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+        preview.setSurfaceProvider(previewView.surfaceProvider)
+        boundProvider[0] = provider
         runCatching {
             provider.unbindAll()
             camera = provider.bindToLifecycle(
@@ -342,15 +355,24 @@ fun ScanReceiptScreen(
                             ContextCompat.getMainExecutor(context),
                             object : ImageCapture.OnImageCapturedCallback() {
                                 override fun onCaptureSuccess(image: ImageProxy) {
-                                    val degrees = image.imageInfo.rotationDegrees
-                                    val raw = image.toBitmap()
-                                    image.close()
                                     scope.launch {
+                                        // Decoding and rotating a full-resolution still takes a lot
+                                        // of memory; on a low-RAM phone report it instead of crashing.
                                         val flattened = withContext(Dispatchers.Default) {
-                                            if (detect) flattenCapture(raw, degrees, liveQuad, liveW, liveH)
-                                            else rotate(raw, degrees)
+                                            try {
+                                                val degrees = image.imageInfo.rotationDegrees
+                                                val raw = try { image.toBitmap() } finally { image.close() }
+                                                if (detect) flattenCapture(raw, degrees, liveQuad, liveW, liveH)
+                                                else rotate(raw, degrees, recycleSource = true)
+                                            } catch (_: OutOfMemoryError) {
+                                                null
+                                            }
                                         }
-                                        review = flattened
+                                        if (flattened != null) {
+                                            review = flattened
+                                        } else {
+                                            error = "Not enough memory to process the photo. Try again."
+                                        }
                                         busy = false
                                     }
                                 }
@@ -555,14 +577,18 @@ private fun flattenCapture(
     liveW: Int,
     liveH: Int,
 ): Bitmap {
-    val upright = rotate(raw, degrees)
-    if (liveQuad != null && liveW > 0 && liveH > 0) {
+    val upright = rotate(raw, degrees, recycleSource = true)
+    val flattened = if (liveQuad != null && liveW > 0 && liveH > 0) {
         val sx = upright.width.toFloat() / liveW
         val sy = upright.height.toFloat() / liveH
         val scaled = FloatArray(8) { i -> if (i % 2 == 0) liveQuad[i] * sx else liveQuad[i] * sy }
-        DocumentDetector.flattenWithQuad(upright, scaled)?.let { return it }
-    }
-    return DocumentDetector.detectAndFlatten(upright) ?: upright
+        DocumentDetector.flattenWithQuad(upright, scaled)
+    } else {
+        null
+    } ?: DocumentDetector.detectAndFlatten(upright)
+    if (flattened == null) return upright
+    upright.recycle()
+    return flattened
 }
 
 /** Awaits the CameraX provider without blocking the main thread. */
@@ -572,8 +598,11 @@ private suspend fun Context.awaitCameraProvider(): ProcessCameraProvider =
         future.addListener({ cont.resume(future.get()) }, ContextCompat.getMainExecutor(this))
     }
 
-private fun rotate(bitmap: Bitmap, degrees: Int): Bitmap {
+/** Rotates [bitmap] upright. With [recycleSource], the original is freed once it's been copied. */
+private fun rotate(bitmap: Bitmap, degrees: Int, recycleSource: Boolean = false): Bitmap {
     if (degrees == 0) return bitmap
     val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
-    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    if (recycleSource && rotated !== bitmap) bitmap.recycle()
+    return rotated
 }

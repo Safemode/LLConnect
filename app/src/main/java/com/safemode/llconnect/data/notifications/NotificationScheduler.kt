@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
  * Schedules the once-a-day notification check. A self-rescheduling [OneTimeWorkRequest] fires at the
  * configured time; the worker calls [schedule] again at the end of each run to queue the next day,
  * which keeps the run pinned to the chosen clock time (a [androidx.work.PeriodicWorkRequest] would
- * drift). Timing can still slip under Doze — acceptable for a daily, non-critical reminder.
+ * drift). Timing can still slip under Doze - acceptable for a daily, non-critical reminder.
  */
 object NotificationScheduler {
     private const val WORK_NAME = "daily_notifications"
@@ -23,7 +23,18 @@ object NotificationScheduler {
      * Enqueues the next daily run at [ConnectionConfig.odometerReminderTime], or cancels the work
      * when no notification type is enabled. Safe to call repeatedly (replaces any pending run).
      */
-    fun schedule(context: Context, config: ConnectionConfig) {
+    fun schedule(context: Context, config: ConnectionConfig) =
+        enqueue(context, config, ExistingWorkPolicy.REPLACE)
+
+    /**
+     * Like [schedule], but leaves an already-pending run alone. Used at app startup: when
+     * WorkManager starts the process to run the daily check, Application.onCreate runs first, and
+     * replacing the work there would cancel the very run that is starting and push it to tomorrow.
+     */
+    fun ensureScheduled(context: Context, config: ConnectionConfig) =
+        enqueue(context, config, ExistingWorkPolicy.KEEP)
+
+    private fun enqueue(context: Context, config: ConnectionConfig, policy: ExistingWorkPolicy) {
         val workManager = WorkManager.getInstance(context)
         if (!config.anyNotificationEnabled) {
             workManager.cancelUniqueWork(WORK_NAME)
@@ -32,7 +43,7 @@ object NotificationScheduler {
         val request = OneTimeWorkRequestBuilder<DailyNotificationWorker>()
             .setInitialDelay(delayToNextMillis(config.odometerReminderTime), TimeUnit.MILLISECONDS)
             .build()
-        workManager.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+        workManager.enqueueUniqueWork(WORK_NAME, policy, request)
     }
 
     /** Millis from now until the next occurrence of [timeHhMm] ("HH:mm"); tomorrow if already past. */

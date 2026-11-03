@@ -24,7 +24,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        navTarget.value = intent?.getStringExtra(Notifications.EXTRA_NAV_TARGET)
+        // Only on a fresh launch. A recreated activity (rotation, or restored after the process
+        // was killed) gets the same intent back, and acting on it again would jump to the
+        // notification's screen after the user had moved on. The same goes for reopening the app
+        // from recents, which replays the launching intent.
+        val fromHistory = (intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (savedInstanceState == null && !fromHistory) {
+            navTarget.value = intent?.getStringExtra(Notifications.EXTRA_NAV_TARGET)
+        }
+        intent?.removeExtra(Notifications.EXTRA_NAV_TARGET)
         enableEdgeToEdge()
         setContent {
             val config by Graph.settingsRepository.config
@@ -66,6 +74,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         intent.getStringExtra(Notifications.EXTRA_NAV_TARGET)?.let { navTarget.value = it }
+        intent.removeExtra(Notifications.EXTRA_NAV_TARGET)
     }
 
     private companion object {

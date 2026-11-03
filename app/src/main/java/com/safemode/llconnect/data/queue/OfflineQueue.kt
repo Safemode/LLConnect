@@ -7,6 +7,7 @@ import com.safemode.llconnect.data.remote.models.FileAttachment
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,11 +18,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 /**
  * Preserves new records (and their scanned attachments) the user saved while the server was
- * unreachable, and flushes them once it's back — checking each entry against the server first so
+ * unreachable, and flushes them once it's back - checking each entry against the server first so
  * it isn't created twice.
  *
  * State lives on disk under `filesDir/queue/`: the entry list in `queue.json`, each entry's local
@@ -60,12 +62,25 @@ class OfflineQueue(
     /** True while a flush is in progress (drives the "Retry now" spinner). */
     val flushing: StateFlow<Boolean> = _flushing.asStateFlow()
 
+    // Completes once queue.json has been read. Every change waits for it: a write that ran before
+    // the load would save the still-empty list over the queue on disk, and a flush would find
+    // nothing to send (the daily worker flushes right after a cold start).
+    private val loaded = CompletableDeferred<Unit>()
+
     init {
         listOf(root, filesRoot, stagingDir).forEach { runCatching { it.mkdirs() } }
         scope.launch {
-            mutex.withLock { _entries.value = withContext(Dispatchers.IO) { readFromDisk() } }
-            // Drop any images a previous session scanned into a form but never committed.
-            withContext(Dispatchers.IO) { stagingDir.listFiles()?.forEach { it.delete() } }
+            try {
+                mutex.withLock { _entries.value = withContext(Dispatchers.IO) { readFromDisk() } }
+            } finally {
+                loaded.complete(Unit)
+            }
+            // Drop images a form scanned but never committed. Only old ones: a form restored after
+            // the process was killed in the background still refers to its recent scans.
+            withContext(Dispatchers.IO) {
+                val cutoff = System.currentTimeMillis() - STAGED_MAX_AGE_MS
+                stagingDir.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.delete() }
+            }
         }
     }
 
@@ -109,7 +124,9 @@ class OfflineQueue(
 
     /**
      * Commits a new entry: moves each staged image into the entry's directory and persists. Then
-     * attempts a flush (a no-op if the server is still unreachable).
+     * attempts a flush (a no-op if the server is still unreachable). Throws [IOException] when the
+     * entry or its images can't be written, so the form can keep the user's input instead of
+     * reporting it as saved; the staged images are left in place for a retry.
      */
     suspend fun enqueue(
         area: RecordArea,
@@ -120,14 +137,17 @@ class OfflineQueue(
         staged: List<QueuedAttachment>,
     ) {
         val id = UUID.randomUUID().toString()
+        val entryDir = File(filesRoot, id)
         withContext(Dispatchers.IO) {
-            val entryDir = File(filesRoot, id).apply { mkdirs() }
-            staged.forEach { att ->
-                val name = att.localFileName ?: return@forEach
-                runCatching {
-                    File(stagingDir, name).copyTo(File(entryDir, name), overwrite = true)
-                    File(stagingDir, name).delete()
-                }
+            try {
+                entryDir.mkdirs()
+                // Copy everything before deleting anything, so a failure part way loses no image.
+                val names = staged.mapNotNull { it.localFileName }
+                names.forEach { File(stagingDir, it).copyTo(File(entryDir, it), overwrite = true) }
+                names.forEach { File(stagingDir, it).delete() }
+            } catch (e: Exception) {
+                entryDir.deleteRecursively()
+                throw IOException("Couldn't save the receipt images.", e)
             }
         }
         val entry = QueuedEntry(
@@ -141,7 +161,12 @@ class OfflineQueue(
             uploadedAttachments = uploaded,
             pendingAttachments = staged,
         )
-        update { it + entry }
+        try {
+            update(strict = true) { it + entry }
+        } catch (e: IOException) {
+            withContext(Dispatchers.IO) { entryDir.deleteRecursively() }
+            throw e
+        }
         flush()
     }
 
@@ -153,6 +178,7 @@ class OfflineQueue(
 
     /** Removes every entry and its files. */
     suspend fun clear() {
+        loaded.await()
         val ids = _entries.value.map { it.id }
         update { emptyList() }
         withContext(Dispatchers.IO) { ids.forEach { File(filesRoot, it).deleteRecursively() } }
@@ -166,10 +192,12 @@ class OfflineQueue(
      * failure; records a message on an entry that fails for any other reason and moves on.
      */
     suspend fun flush(): FlushOutcome {
+        loaded.await()
         if (_entries.value.isEmpty() || !serverStatus.isReachable()) return FlushOutcome()
         if (!flushMutex.tryLock()) return FlushOutcome()
         var uploaded = 0
         var failed = 0
+        var alreadyOnServer = 0
         try {
             _flushing.value = true
             val currentServer = currentServerId()
@@ -183,7 +211,10 @@ class OfflineQueue(
                         remove(snapshot.id)
                         uploaded++
                     }
-                    FlushResult.Duplicate -> remove(snapshot.id)
+                    FlushResult.Duplicate -> {
+                        remove(snapshot.id)
+                        alreadyOnServer++
+                    }
                     FlushResult.Connectivity -> break
                     is FlushResult.Failed -> {
                         setError(snapshot.id, result.message)
@@ -195,16 +226,21 @@ class OfflineQueue(
             _flushing.value = false
             flushMutex.unlock()
         }
-        return FlushOutcome(uploaded, failed)
+        return FlushOutcome(uploaded, failed, alreadyOnServer)
     }
 
     /** Result of a flush pass: how many entries were newly created, and how many failed. */
-    data class FlushOutcome(val uploaded: Int = 0, val failed: Int = 0)
+    /**
+     * What a flush did. [alreadyOnServer] counts entries dropped because a matching record was
+     * already there (a retry of a write that had reached the server), reported so they don't
+     * just vanish from the queue.
+     */
+    data class FlushOutcome(val uploaded: Int = 0, val failed: Int = 0, val alreadyOnServer: Int = 0)
 
     private sealed interface FlushResult {
         /** Successfully created on the server. */
         data object Done : FlushResult
-        /** Already present on the server — nothing to do. */
+        /** Already present on the server - nothing to do. */
         data object Duplicate : FlushResult
         /** Lost the server mid-flush; stop and retry the whole queue later. */
         data object Connectivity : FlushResult
@@ -272,25 +308,54 @@ class OfflineQueue(
     private suspend fun setError(id: String, message: String) =
         update { list -> list.map { if (it.id == id) it.copy(lastError = message) else it } }
 
-    private suspend fun update(transform: (List<QueuedEntry>) -> List<QueuedEntry>) = mutex.withLock {
-        val next = transform(_entries.value)
-        _entries.value = next
-        withContext(Dispatchers.IO) { writeToDisk(next) }
-    }
-
-    private fun readFromDisk(): List<QueuedEntry> = runCatching {
-        if (!jsonFile.exists()) emptyList() else adapter.fromJson(jsonFile.readText()) ?: emptyList()
-    }.getOrDefault(emptyList())
-
-    /** Atomic write via a temp file + rename, so a crash mid-write can't corrupt the queue. */
-    private fun writeToDisk(list: List<QueuedEntry>) {
-        runCatching {
-            val tmp = File(root, "queue.json.tmp")
-            tmp.writeText(adapter.toJson(list))
-            if (!tmp.renameTo(jsonFile)) {
-                jsonFile.writeText(adapter.toJson(list))
-                tmp.delete()
+    /**
+     * Applies [transform] and persists the result. With [strict], a failed write is undone in
+     * memory and thrown, for callers that must not report an entry as saved when it isn't.
+     */
+    private suspend fun update(
+        strict: Boolean = false,
+        transform: (List<QueuedEntry>) -> List<QueuedEntry>,
+    ) {
+        loaded.await()
+        mutex.withLock {
+            val previous = _entries.value
+            val next = transform(previous)
+            _entries.value = next
+            val written = withContext(Dispatchers.IO) { writeToDisk(next) }
+            if (!written && strict) {
+                _entries.value = previous
+                throw IOException("Couldn't write the offline queue.")
             }
         }
+    }
+
+    private fun readFromDisk(): List<QueuedEntry> {
+        if (!jsonFile.exists()) return emptyList()
+        return runCatching { adapter.fromJson(jsonFile.readText()) ?: emptyList() }
+            .getOrElse {
+                // Unreadable, e.g. written by a version with a different entry format. Keep a copy
+                // instead of letting the next write overwrite it, so the entries can be recovered.
+                runCatching {
+                    jsonFile.copyTo(File(root, "queue.unreadable-${System.currentTimeMillis()}.json"))
+                }
+                emptyList()
+            }
+    }
+
+    /**
+     * Atomic write via a temp file + rename, so a crash mid-write can't corrupt the queue. Returns
+     * false if the queue couldn't be written (for example, the disk is full).
+     */
+    private fun writeToDisk(list: List<QueuedEntry>): Boolean = runCatching {
+        val tmp = File(root, "queue.json.tmp")
+        tmp.writeText(adapter.toJson(list))
+        if (!tmp.renameTo(jsonFile)) {
+            jsonFile.writeText(adapter.toJson(list))
+            tmp.delete()
+        }
+    }.isSuccess
+
+    private companion object {
+        const val STAGED_MAX_AGE_MS = 24 * 60 * 60 * 1000L
     }
 }

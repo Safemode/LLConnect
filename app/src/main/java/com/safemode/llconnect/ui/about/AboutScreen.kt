@@ -35,7 +35,7 @@ fun AboutScreen() {
     val appVersion = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        }.getOrNull() ?: "—"
+        }.getOrNull() ?: "-"
     }
     val config by Graph.settingsRepository.config
         .collectAsStateWithLifecycle(initialValue = ConnectionConfig())

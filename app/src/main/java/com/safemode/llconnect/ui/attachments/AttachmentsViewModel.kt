@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 class AttachmentsViewModel(
     val area: RecordArea,
@@ -42,18 +43,17 @@ class AttachmentsViewModel(
         }
     }
 
-    private fun currentFiles(): List<FileAttachment> =
-        (state.value as? UiState.Success)?.data?.map {
-            FileAttachment(name = it.name, location = it.location)
-        } ?: emptyList()
-
-    fun addUploaded(fileName: String, mimeType: String?, bytes: ByteArray) {
+    /** Uploads [file] (a temporary copy, deleted afterwards) and adds it to the record. */
+    fun addUploaded(file: File, fileName: String, mimeType: String?) {
         viewModelScope.launch {
             _busy.value = true
-            repository.uploadDocument(fileName, mimeType, bytes).fold(
-                onSuccess = { uploaded ->
-                    commit(currentFiles() + uploaded, "Attachment added.")
-                },
+            val uploaded = try {
+                repository.uploadDocument(file, fileName, mimeType)
+            } finally {
+                file.delete()
+            }
+            uploaded.fold(
+                onSuccess = { attachment -> commit("Attachment added.") { it + attachment } },
                 onFailure = {
                     _message.value = it.message ?: "Upload failed."
                     _busy.value = false
@@ -63,28 +63,28 @@ class AttachmentsViewModel(
     }
 
     fun rename(target: FileAttachmentResponse, newName: String) {
-        val updated = currentFiles().map {
-            if (it.location == target.location && it.name == target.name) it.copy(name = newName) else it
+        commitAsync("Renamed.") { files ->
+            files.map { if (it.matches(target)) it.copy(name = newName) else it }
         }
-        commitAsync(updated, "Renamed.")
     }
 
     fun delete(target: FileAttachmentResponse) {
-        val updated = currentFiles().filterNot {
-            it.location == target.location && it.name == target.name
-        }
-        commitAsync(updated, "Attachment deleted.")
+        commitAsync("Attachment deleted.") { files -> files.filterNot { it.matches(target) } }
     }
 
-    private fun commitAsync(files: List<FileAttachment>, successMessage: String) {
+    private fun FileAttachment.matches(target: FileAttachmentResponse) =
+        location == target.location && name == target.name
+
+    private fun commitAsync(successMessage: String, edit: (List<FileAttachment>) -> List<FileAttachment>) {
         viewModelScope.launch {
             _busy.value = true
-            commit(files, successMessage)
+            commit(successMessage, edit)
         }
     }
 
-    private suspend fun commit(files: List<FileAttachment>, successMessage: String) {
-        repository.setAttachments(area, vehicleId, recordId, files).fold(
+    // The edit is applied to the record's current list on the server, not the one shown here.
+    private suspend fun commit(successMessage: String, edit: (List<FileAttachment>) -> List<FileAttachment>) {
+        repository.editAttachments(area, vehicleId, recordId, edit).fold(
             onSuccess = {
                 _message.value = successMessage
                 _state.value = repository.getAttachments(area, vehicleId, recordId).fold(

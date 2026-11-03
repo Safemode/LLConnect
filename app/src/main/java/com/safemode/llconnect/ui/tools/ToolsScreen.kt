@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +46,8 @@ fun ToolsScreen(
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val result by viewModel.result.collectAsStateWithLifecycle()
     var deepClean by remember { mutableStateOf(false) }
+    // Actions that change the server or notify people are confirmed first.
+    var confirm by remember { mutableStateOf<Confirmation?>(null) }
 
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
@@ -76,7 +80,17 @@ fun ToolsScreen(
                         Switch(checked = deepClean, onCheckedChange = { deepClean = it }, enabled = !busy)
                     }
                     ToolButton(Icons.Filled.CleaningServices, "Clean up temp & orphaned files", enabled = !busy) {
-                        viewModel.cleanup(deepClean)
+                        val deep = deepClean
+                        confirm = Confirmation(
+                            title = if (deep) "Deep clean?" else "Clean up files?",
+                            text = if (deep) {
+                                "This permanently deletes temp files and any uploaded documents and " +
+                                    "images on the server that no record references. It can't be undone."
+                            } else {
+                                "This deletes the server's temporary files."
+                            },
+                            action = "Clean up",
+                        ) { viewModel.cleanup(deep) }
                     }
                 }
             }
@@ -85,7 +99,11 @@ fun ToolsScreen(
                 viewModel.tempFiles()
             }
             ToolButton(Icons.AutoMirrored.Filled.Send, "Send reminders to collaborators", enabled = !busy) {
-                viewModel.sendReminders()
+                confirm = Confirmation(
+                    title = "Send reminders?",
+                    text = "The server emails every collaborator about their due and overdue reminders.",
+                    action = "Send",
+                ) { viewModel.sendReminders() }
             }
 
             if (busy) {
@@ -105,7 +123,31 @@ fun ToolsScreen(
             }
         }
     }
+
+    confirm?.let { c ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text(c.title) },
+            text = { Text(c.text) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirm = null
+                    c.onConfirm()
+                }) { Text(c.action) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
+
+private class Confirmation(
+    val title: String,
+    val text: String,
+    val action: String,
+    val onConfirm: () -> Unit,
+)
 
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {

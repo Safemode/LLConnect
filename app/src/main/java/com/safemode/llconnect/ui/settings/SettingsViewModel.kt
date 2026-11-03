@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -28,8 +30,13 @@ class SettingsViewModel : ViewModel() {
     private val _cacheUsage = MutableStateFlow(0L)
     val cacheUsage: StateFlow<Long> = _cacheUsage.asStateFlow()
 
+    // Serializes saves so two quick changes can't each read the same old config and drop the other.
+    private val saveMutex = Mutex()
+
     init {
-        viewModelScope.launch { _config.value = settings.config.first() }
+        // Follow the saved config rather than reading it once, so the screen settles on what is on
+        // disk even if a change is made before the first load finishes.
+        viewModelScope.launch { settings.config.collect { _config.value = it } }
         refreshCacheUsage()
     }
 
@@ -47,28 +54,22 @@ class SettingsViewModel : ViewModel() {
     }
 
     /**
-     * Applies a preference change and persists it right away. Only the preference fields are
-     * written (merged onto the latest saved config) so connection settings edited elsewhere
-     * are never clobbered.
+     * Applies a preference change and persists it right away. The change is shown immediately and
+     * then applied to the latest saved config, so connection settings edited elsewhere are never
+     * clobbered, and a change made before the screen finished loading can't save the defaults.
+     * [onSaved] runs with the config as written.
      */
-    fun updateAndSave(transform: (ConnectionConfig) -> ConnectionConfig) {
-        val updated = transform(_config.value)
-        _config.value = updated
+    fun updateAndSave(
+        onSaved: (ConnectionConfig) -> Unit = {},
+        transform: (ConnectionConfig) -> ConnectionConfig,
+    ) {
+        _config.value = transform(_config.value)
         viewModelScope.launch {
-            val merged = settings.config.first().copy(
-                fuelEconomyUnit = updated.fuelEconomyUnit,
-                distanceUnit = updated.distanceUnit,
-                recordSortOrder = updated.recordSortOrder,
-                cacheSize = updated.cacheSize,
-                themePreference = updated.themePreference,
-                notifyOdometerDaily = updated.notifyOdometerDaily,
-                odometerReminderTime = updated.odometerReminderTime,
-                notifyReminders = updated.notifyReminders,
-                notifyQueue = updated.notifyQueue,
-                fullQualityAreas = updated.fullQualityAreas,
-            )
-            settings.save(merged)
-            apiProvider.updateConfig(merged)
+            val saved = saveMutex.withLock {
+                transform(settings.config.first()).also { settings.save(it) }
+            }
+            apiProvider.updateConfig(saved)
+            onSaved(saved)
         }
     }
 }

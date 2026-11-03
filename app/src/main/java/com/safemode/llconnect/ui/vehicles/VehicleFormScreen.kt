@@ -28,16 +28,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.safemode.llconnect.Graph
+import com.safemode.llconnect.data.remote.models.ExtraField
 import com.safemode.llconnect.data.remote.models.Vehicle
 import com.safemode.llconnect.data.remote.models.VehicleAddRequest
 import com.safemode.llconnect.data.remote.models.VehicleUpdateRequest
 import com.safemode.llconnect.ui.common.FuelTypeField
+import com.safemode.llconnect.ui.common.NullableExtraFieldListSaver
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,20 +52,27 @@ fun VehicleFormScreen(
     val isEdit = vehicleId.isNotBlank()
     val scope = rememberCoroutineScope()
 
-    var year by remember { mutableStateOf("") }
-    var make by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("") }
-    var licensePlate by remember { mutableStateOf("") }
-    var fuelType by remember { mutableStateOf("Gasoline") }
-    var identifier by remember { mutableStateOf("LicensePlate") }
-    var tags by remember { mutableStateOf("") }
+    // Saveable so rotation or a theme change doesn't wipe what's been typed. `submitting` stays
+    // plain remember: the save coroutine it tracks doesn't survive recreation.
+    var year by rememberSaveable { mutableStateOf("") }
+    var make by rememberSaveable { mutableStateOf("") }
+    var model by rememberSaveable { mutableStateOf("") }
+    var licensePlate by rememberSaveable { mutableStateOf("") }
+    var fuelType by rememberSaveable { mutableStateOf("Gasoline") }
+    var identifier by rememberSaveable { mutableStateOf("LicensePlate") }
+    var tags by rememberSaveable { mutableStateOf("") }
+    // Not editable here, but sent back so an update doesn't wipe the vehicle's custom fields.
+    var extraFields by rememberSaveable(stateSaver = NullableExtraFieldListSaver) {
+        mutableStateOf<List<ExtraField>?>(null)
+    }
 
-    var loading by remember { mutableStateOf(isEdit) }
+    var editLoaded by rememberSaveable { mutableStateOf(false) }
+    var loading by rememberSaveable { mutableStateOf(isEdit) }
     var submitting by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vehicleId) {
-        if (!isEdit) return@LaunchedEffect
+        if (!isEdit || editLoaded) return@LaunchedEffect
         loading = true
         Graph.repository.getVehicleById(vehicleId).fold(
             onSuccess = { v ->
@@ -74,6 +84,8 @@ fun VehicleFormScreen(
                     fuelType = v.deriveFuelType()
                     identifier = v.vehicleIdentifier?.ifBlank { "LicensePlate" } ?: "LicensePlate"
                     tags = v.tags?.joinToString(" ").orEmpty()
+                    extraFields = v.extraFields
+                    editLoaded = true
                 } else {
                     error = "Could not load this vehicle."
                 }
@@ -169,6 +181,7 @@ fun VehicleFormScreen(
                                     licensePlate = licensePlate.ifBlank { null },
                                     fuelType = fuelType,
                                     tags = tags.ifBlank { null },
+                                    extraFields = extraFields,
                                 ),
                             )
                         } else {

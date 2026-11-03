@@ -95,7 +95,7 @@ private val DrawerRowHeight = 56.dp
 
 /**
  * Lays out one drawer row: inset from the sheet's edges like the stock item, and drawn
- * [DrawerPillHeight] tall centred in a [DrawerRowHeight] slot — the highlight is the item's own
+ * [DrawerPillHeight] tall centred in a [DrawerRowHeight] slot - the highlight is the item's own
  * background, so shrinking the item is what slims the highlight.
  */
 private fun Modifier.drawerRow(): Modifier =

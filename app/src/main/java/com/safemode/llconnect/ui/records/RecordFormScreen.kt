@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -67,10 +68,14 @@ import com.safemode.llconnect.data.AttachmentMerge
 import com.safemode.llconnect.data.NumberParsing
 import com.safemode.llconnect.ui.common.DateField
 import com.safemode.llconnect.ui.common.DropdownField
+import com.safemode.llconnect.ui.common.FileAttachmentListSaver
+import com.safemode.llconnect.ui.common.NullableExtraFieldListSaver
+import com.safemode.llconnect.ui.common.QueuedAttachmentListSaver
 import com.safemode.llconnect.ui.scan.ScanReceiptScreen
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
 import java.time.LocalDate
 
 private val PlanTypes = listOf("ServiceRecord", "RepairRecord", "UpgradeRecord")
@@ -126,60 +131,75 @@ fun RecordFormScreen(
     val distanceUnit by distanceUnitFlow
         .collectAsStateWithLifecycle(initialValue = Graph.apiProvider.currentConfig().distanceUnit.suffix)
 
-    var date by remember { mutableStateOf(LocalDate.now().toString()) }
-    var odometer by remember { mutableStateOf("") }
+    // Form state is saveable so rotation, a theme change, or the process being killed in the
+    // background doesn't wipe what's been typed or scanned. The in-flight flags (submitting,
+    // deleting, scanUploading) stay plain remember: the coroutines they track don't survive
+    // recreation, so they must start over.
+    var date by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    var odometer by rememberSaveable { mutableStateOf("") }
     // Odometer records: the reading the entry counts up from. Prefilled (carried from the
     // previous entry when adding, or the record's own value when editing) and read-only until
     // the user taps the edit toggle beside it.
-    var initialOdometer by remember { mutableStateOf("") }
-    var initialOdometerLocked by remember { mutableStateOf(true) }
-    var description by remember { mutableStateOf("") }
-    var cost by remember { mutableStateOf("") }
-    var fuelConsumed by remember { mutableStateOf("") }
-    var isFillToFull by remember { mutableStateOf(true) }
-    var missedFuelUp by remember { mutableStateOf(false) }
-    var notes by remember { mutableStateOf("") }
-    var tags by remember { mutableStateOf("") }
+    var initialOdometer by rememberSaveable { mutableStateOf("") }
+    var initialOdometerLocked by rememberSaveable { mutableStateOf(true) }
+    var description by rememberSaveable { mutableStateOf("") }
+    var cost by rememberSaveable { mutableStateOf("") }
+    var fuelConsumed by rememberSaveable { mutableStateOf("") }
+    var isFillToFull by rememberSaveable { mutableStateOf(true) }
+    var missedFuelUp by rememberSaveable { mutableStateOf(false) }
+    var notes by rememberSaveable { mutableStateOf("") }
+    var tags by rememberSaveable { mutableStateOf("") }
     // Planner
-    var planType by remember { mutableStateOf("ServiceRecord") }
-    var priority by remember { mutableStateOf("Normal") }
-    var progress by remember { mutableStateOf("Backlog") }
+    var planType by rememberSaveable { mutableStateOf("ServiceRecord") }
+    var priority by rememberSaveable { mutableStateOf("Normal") }
+    var progress by rememberSaveable { mutableStateOf("Backlog") }
     // Supplies
-    var partNumber by remember { mutableStateOf("") }
-    var partSupplier by remember { mutableStateOf("") }
-    var partQuantity by remember { mutableStateOf("") }
+    var partNumber by rememberSaveable { mutableStateOf("") }
+    var partSupplier by rememberSaveable { mutableStateOf("") }
+    var partQuantity by rememberSaveable { mutableStateOf("") }
     // Reminders
-    var dueDate by remember { mutableStateOf(LocalDate.now().toString()) }
-    var dueOdometer by remember { mutableStateOf("") }
-    var metric by remember { mutableStateOf("Both") }
+    var dueDate by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    var dueOdometer by rememberSaveable { mutableStateOf("") }
+    var metric by rememberSaveable { mutableStateOf("Both") }
     // Equipment
-    var isEquipped by remember { mutableStateOf(true) }
+    var isEquipped by rememberSaveable { mutableStateOf(true) }
     // Notes
-    var noteText by remember { mutableStateOf("") }
-    var pinned by remember { mutableStateOf(false) }
+    var noteText by rememberSaveable { mutableStateOf("") }
+    var pinned by rememberSaveable { mutableStateOf(false) }
     // Not user-editable here, but preserved so an update doesn't wipe them server-side.
-    var attachments by remember { mutableStateOf<List<FileAttachment>>(emptyList()) }
+    var attachments by rememberSaveable(stateSaver = FileAttachmentListSaver) {
+        mutableStateOf<List<FileAttachment>>(emptyList())
+    }
     // The attachments as loaded when an edit opened, so a save can tell what the user added or
     // removed here apart from what changed on the server since.
-    var loadedAttachments by remember { mutableStateOf<List<FileAttachment>>(emptyList()) }
-    var extraFields by remember { mutableStateOf<List<ExtraField>?>(null) }
+    var loadedAttachments by rememberSaveable(stateSaver = FileAttachmentListSaver) {
+        mutableStateOf<List<FileAttachment>>(emptyList())
+    }
+    var extraFields by rememberSaveable(stateSaver = NullableExtraFieldListSaver) {
+        mutableStateOf<List<ExtraField>?>(null)
+    }
     // Receipts whose upload couldn't happen right away: held locally (staged). A new record uploads
     // them when it's flushed from the offline queue; an edit uploads them when it's saved.
-    var pendingImages by remember { mutableStateOf<List<QueuedAttachment>>(emptyList()) }
+    var pendingImages by rememberSaveable(stateSaver = QueuedAttachmentListSaver) {
+        mutableStateOf<List<QueuedAttachment>>(emptyList())
+    }
     // Snapshot of the vehicle's name, so a queued entry reads well even while the server is down.
-    var vehicleName by remember { mutableStateOf("") }
+    var vehicleName by rememberSaveable { mutableStateOf("") }
 
-    var loading by remember { mutableStateOf(isEdit) }
+    // Set once an edit's record has been loaded, so a recreated screen doesn't reload it over the
+    // user's changes.
+    var editLoaded by rememberSaveable { mutableStateOf(false) }
+    var loading by rememberSaveable { mutableStateOf(isEdit) }
     var submitting by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var scanUploading by remember { mutableStateOf(false) }
-    var scanning by remember { mutableStateOf(false) }
+    var scanning by rememberSaveable { mutableStateOf(false) }
 
     // In edit mode, fetch the existing record and pre-fill the fields.
     LaunchedEffect(recordId) {
-        if (!isEdit) return@LaunchedEffect
+        if (!isEdit || editLoaded) return@LaunchedEffect
         loading = true
         Graph.repository.getRecordForEdit(area, vehicleId, recordId).fold(
             onSuccess = { data ->
@@ -209,6 +229,7 @@ fun RecordFormScreen(
                     attachments = data.files
                     loadedAttachments = data.files
                     extraFields = data.extraFields
+                    editLoaded = true
                 } else {
                     error = "Could not load this record for editing."
                 }
@@ -361,7 +382,7 @@ fun RecordFormScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         supportingText = {
                             Text(
-                                if (initialOdometerLocked) "Carried from the previous entry — tap edit to change"
+                                if (initialOdometerLocked) "Carried from the previous entry - tap edit to change"
                                 else "Editing",
                             )
                         },
@@ -628,19 +649,28 @@ fun RecordFormScreen(
                             pinned = pinned,
                         )
 
-                        suspend fun queueIt() {
+                        // Queues the entry and leaves the form; on a failed write, stays put with the
+                        // input intact instead.
+                        suspend fun queueAndLeave() {
                             val uploaded = attachments.map {
                                 QueuedAttachment(it.name ?: "attachment", "image/jpeg", location = it.location)
                             }
-                            Graph.offlineQueue.enqueue(
-                                area = area,
-                                vehicleId = vehicleId,
-                                vehicleName = vehicleName.ifBlank { "Vehicle #$vehicleId" },
-                                fields = fields,
-                                uploaded = uploaded,
-                                staged = pendingImages,
-                            )
+                            try {
+                                Graph.offlineQueue.enqueue(
+                                    area = area,
+                                    vehicleId = vehicleId,
+                                    vehicleName = vehicleName.ifBlank { "Vehicle #$vehicleId" },
+                                    fields = fields,
+                                    uploaded = uploaded,
+                                    staged = pendingImages,
+                                )
+                            } catch (e: IOException) {
+                                error = "Couldn't save this entry on the device: ${e.message}"
+                                submitting = false
+                                return
+                            }
                             Toast.makeText(context, QUEUED_MESSAGE, Toast.LENGTH_LONG).show()
+                            onBack()
                         }
 
                         // Pure-live path only when the server is reachable and every receipt is
@@ -651,8 +681,7 @@ fun RecordFormScreen(
                                 onSuccess = { onBack() },
                                 onFailure = { e ->
                                     if (!Graph.serverStatus.isReachable()) {
-                                        queueIt()
-                                        onBack()
+                                        queueAndLeave()
                                     } else {
                                         error = e.message
                                         submitting = false
@@ -660,8 +689,7 @@ fun RecordFormScreen(
                                 },
                             )
                         } else {
-                            queueIt()
-                            onBack()
+                            queueAndLeave()
                         }
                     }
                 },
@@ -802,8 +830,8 @@ private fun AttachmentRow(name: String, caption: String?, onRemove: () -> Unit) 
  * 2026-10-02_service_22148_receipt.jpg), or `date_recordtype_receipt.jpg` when it isn't (e.g. a
  * scan taken before the form is filled in). The date falls back to today when the field is blank.
  *
- * When a record already carries an attachment with that name — multiple receipts scanned onto the
- * same record share every field above — a numeric suffix is appended (`..._receipt_2.jpg`,
+ * When a record already carries an attachment with that name - multiple receipts scanned onto the
+ * same record share every field above - a numeric suffix is appended (`..._receipt_2.jpg`,
  * `..._receipt_3.jpg`, ...) so each upload keeps a distinct name instead of colliding.
  */
 private fun receiptFileName(
@@ -829,7 +857,7 @@ private fun receiptFileName(
 
 /** Shown after a new record is saved to the offline queue. */
 private const val QUEUED_MESSAGE =
-    "Saved to queue — it'll upload when the server is reachable"
+    "Saved to queue - it'll upload when the server is reachable"
 
 private suspend fun submit(
     area: RecordArea,

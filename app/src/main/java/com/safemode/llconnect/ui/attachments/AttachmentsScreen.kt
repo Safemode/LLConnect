@@ -66,6 +66,7 @@ import com.safemode.llconnect.ui.common.ErrorState
 import com.safemode.llconnect.ui.common.LoadingState
 import com.safemode.llconnect.ui.common.UiState
 import com.safemode.llconnect.ui.records.recordAreaFromName
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -121,9 +122,9 @@ fun AttachmentsScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                val loaded = withContext(Dispatchers.IO) { readFile(context, uri) }
+                val loaded = withContext(Dispatchers.IO) { copyToCache(context, uri) }
                 if (loaded != null) {
-                    viewModel.addUploaded(loaded.name, loaded.mime, loaded.bytes)
+                    viewModel.addUploaded(loaded.file, loaded.name, loaded.mime)
                 } else {
                     snackbarHostState.showSnackbar("Could not read the selected file.")
                 }
@@ -174,7 +175,7 @@ fun AttachmentsScreen(
                                 file = file,
                                 onOpen = {
                                     scope.launch {
-                                        openAttachment(context, viewModel, file, snackbarHostState)
+                                        openAttachment(context, scope, file, snackbarHostState)
                                     }
                                 },
                                 onRename = { renameTarget = file },
@@ -278,9 +279,13 @@ private fun AttachmentCard(
     }
 }
 
-private data class LoadedFile(val name: String, val mime: String?, val bytes: ByteArray)
+private class LoadedFile(val file: File, val name: String, val mime: String?)
 
-private fun readFile(context: Context, uri: Uri): LoadedFile? = try {
+/**
+ * Copies the picked document into the cache so it can be streamed to the server; reading it into
+ * memory instead would crash on a large PDF or video.
+ */
+private fun copyToCache(context: Context, uri: Uri): LoadedFile? = try {
     val resolver = context.contentResolver
     var name = "upload"
     resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
@@ -290,8 +295,17 @@ private fun readFile(context: Context, uri: Uri): LoadedFile? = try {
         }
     }
     val mime = resolver.getType(uri)
-    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-    LoadedFile(name, mime, bytes)
+    val dir = File(context.cacheDir, "attachment-uploads").apply { mkdirs() }
+    val file = File.createTempFile("upload", null, dir)
+    val copied = resolver.openInputStream(uri)?.use { input ->
+        file.outputStream().use { input.copyTo(it) }
+    }
+    if (copied == null) {
+        file.delete()
+        null
+    } else {
+        LoadedFile(file, name, mime)
+    }
 } catch (e: Exception) {
     null
 }
@@ -299,7 +313,7 @@ private fun readFile(context: Context, uri: Uri): LoadedFile? = try {
 /** Downloads the attachment to the cache and opens it with an external viewer. */
 private suspend fun openAttachment(
     context: Context,
-    viewModel: AttachmentsViewModel,
+    scope: CoroutineScope,
     file: FileAttachmentResponse,
     snackbar: SnackbarHostState,
 ) {
@@ -308,16 +322,17 @@ private suspend fun openAttachment(
         snackbar.showSnackbar("This attachment has no location yet.")
         return
     }
-    snackbar.showSnackbar("Opening…")
-    val result = Graph.repository.downloadAttachment(location)
+    // Not awaited: showSnackbar suspends until the snackbar is dismissed, which would hold up the
+    // download by several seconds.
+    val opening = scope.launch { snackbar.showSnackbar("Opening…") }
+    val name = safeFileName(file.name) ?: safeFileName(location) ?: "attachment"
+    val dir = File(context.cacheDir, "attachments").apply { mkdirs() }
+    val outFile = File(dir, name)
+    val result = Graph.repository.downloadAttachment(location, outFile)
+    opening.cancel()
     result.fold(
-        onSuccess = { bytes ->
+        onSuccess = {
             try {
-                val name = file.name?.substringAfterLast('/')?.ifBlank { null }
-                    ?: location.substringAfterLast('/')
-                val dir = File(context.cacheDir, "attachments").apply { mkdirs() }
-                val outFile = File(dir, name)
-                withContext(Dispatchers.IO) { outFile.writeBytes(bytes) }
                 val uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.fileprovider",
@@ -339,3 +354,11 @@ private suspend fun openAttachment(
         onFailure = { snackbar.showSnackbar(it.message ?: "Download failed.") },
     )
 }
+
+/**
+ * The last path segment of [raw], or null when there's nothing usable. Server-supplied names are
+ * used as cache file names, so path separators and "." / ".." must never get through.
+ */
+private fun safeFileName(raw: String?): String? =
+    raw?.substringAfterLast('/')?.substringAfterLast('\\')?.trim()
+        ?.takeIf { it.isNotEmpty() && it != "." && it != ".." }

@@ -16,6 +16,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.FieldMap
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.Headers
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -25,7 +26,7 @@ import retrofit2.http.Query
 /**
  * Retrofit interface for the LubeLogger REST API (verified against v1.7.4).
  * Auth headers (x-api-key / Basic) and the culture-invariant header are added
- * by [AuthInterceptor], so they are not declared here.
+ * by [AuthInterceptor] and [ApiHeadersInterceptor], so they are not declared here.
  */
 interface LubeLoggerApi {
 
@@ -301,12 +302,17 @@ interface LubeLoggerApi {
     suspend fun getAllReminders(): Response<List<ReminderRecord>>
 
     // ---- Tools ----
+    // These GETs are actions, not reads, so they are marked no-store: the offline fallback must
+    // never answer them from the cache with an old "backup created" or "reminders sent" result.
+    @Headers(NO_STORE)
     @GET("api/cleanup")
     suspend fun cleanup(@Query("deepClean") deepClean: String? = null): Response<ResponseBody>
 
+    @Headers(NO_STORE)
     @GET("api/tempfiles")
     suspend fun tempFiles(): Response<ResponseBody>
 
+    @Headers(NO_STORE)
     @GET("api/vehicle/reminders/send")
     suspend fun sendReminders(): Response<ResponseBody>
 
@@ -332,6 +338,9 @@ interface LubeLoggerApi {
     @GET("api/calendar")
     suspend fun calendar(): Response<ResponseBody>
 
+    @Headers(NO_STORE)
     @GET("api/makebackup")
     suspend fun makeBackup(): Response<ResponseBody>
 }
+
+private const val NO_STORE = "Cache-Control: no-store"

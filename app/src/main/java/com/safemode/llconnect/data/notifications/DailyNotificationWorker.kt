@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * The once-a-day notification check (scheduled by [NotificationScheduler]). Posts the odometer
- * reminder (local), then — if enabled and the server is reachable — notifies about due/overdue
+ * reminder (local), then - if enabled and the server is reachable - notifies about due/overdue
  * reminders and flushes the offline queue, reporting the result. Always reschedules the next run.
  */
 class DailyNotificationWorker(
@@ -42,7 +42,12 @@ class DailyNotificationWorker(
                 }
                 if (reachable && config.notifyQueue) {
                     val outcome = Graph.offlineQueue.flush()
-                    Notifications.postQueueResult(applicationContext, outcome.uploaded, outcome.failed)
+                    Notifications.postQueueResult(
+                        applicationContext,
+                        outcome.uploaded,
+                        outcome.failed,
+                        outcome.alreadyOnServer,
+                    )
                 }
             }
         } finally {
