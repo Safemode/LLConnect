@@ -1,5 +1,5 @@
 [versions]
-agp = "9.4.1"
+agp = "9.5.1"
 # Must match the Kotlin version bundled with AGP 9.4.0 (used for the Compose compiler plugin).
 kotlin = "2.4.20"
 coreKtx = "1.19.1"
